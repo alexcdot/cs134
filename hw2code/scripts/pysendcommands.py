@@ -31,7 +31,7 @@ if __name__ == "__main__":
     sub = rospy.Subscriber('/hebiros/robot/feedback/joint_state', JointState, queue_size=100, callback=sub_callback)
 
     command_msg = JointState()
-    command_msg.name.append('Tiger/2')    # Replace Family/Name
+    command_msg.name.append('Boogaloo/yaw')    # Replace Family/Name
     command_msg.position.append(0)
     # command_msg.velocity.append(0)
     # command_msg.effort.append(0)

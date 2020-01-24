@@ -37,13 +37,12 @@ class SplineParams:
 
         # Set the cubic spline parameters.  Make sure the main code (timer)
         # doesn't access until we're done.
-        with access_parameters_mutex:
-            self.t0 = tstart
-            self.tf = tstart + tmove
-            self.a  = startpos
-            self.b  = startvel
-            self.c  = ( 3.0 * (goalpos - startpos) / tmove + 2.0 * startvel) / tmove
-            self.d  = (-2.0 * (goalpos - startpos) / tmove - 3.0 * startvel) / (tmove*tmove)
+        self.t0 = tstart
+        self.tf = tstart + tmove
+        self.a  = startpos
+        self.b  = startvel
+        self.c  = ( 3.0 * (goalpos - startpos) / tmove + 2.0 * startvel) / tmove
+        self.d  = (-2.0 * (goalpos - startpos) / tmove - 3.0 * startvel) / (tmove*tmove)
     
     def get_point(self, t):
         """ Returns the value and derivative at the current time """
@@ -85,6 +84,7 @@ def yaw_pitch_callback(msg):
     global current_arm_state
     global t
     with access_parameters_mutex:
+        print("Received command", msg)
         yaw_params.setspline(msg.yaw, current_arm_state.position[0],
                               current_arm_state.velocity[0], t)
         pitch_params.setspline(msg.pitch, current_arm_state.position[1],
@@ -125,8 +125,11 @@ if __name__ == "__main__":
     # Initialize the parameters and state variables.  Do this before
     # the subscriber is activated (as it may run anytime thereafter).
     # Set up the spline to move to zero (starting at t=1).
+    initial_msg = YawPitchCommand()
+    initial_msg.yaw = 0.0
+    initial_msg.pitch = 0.0
 
-    yaw_pitch_callback(command_msg)
+    # yaw_pitch_callback(initial_msg)
 
     t = 0.0
     min_yaw = -1.5
@@ -155,6 +158,7 @@ if __name__ == "__main__":
         with access_parameters_mutex:
             (yawpos, yawvel, yawtor) = yaw_params.get_point(t)
             (pitchpos, pitchvel, pitchtor) = pitch_params.get_point(t)
+            print(t, yawpos, pitchpos)
 
         # Build and send (publish) the command message.
         command_msg.header.stamp = servotime
