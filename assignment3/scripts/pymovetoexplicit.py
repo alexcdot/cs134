@@ -55,8 +55,13 @@ class SplineParams:
 
         cmdpos = self.a + self.b*r + self.c*r*r + self.d*r*r*r
         cmdvel = self.b + 2.0*self.c*r + 3.0*self.d*r*r
+        cmdtor = 0.0
 
-        return (cmdpos, cmdvel, 0.0)
+        if round(t * 1000) % 100 < 10:
+            print("a: {}, b: {}, c: {}, d: {}, r: {}, cmdpos: {}, cmdvel: {}".format(
+                self.a, self.b, self.c, self.d, r, cmdpos, cmdvel))
+
+        return (cmdpos, cmdvel, cmdtor)
         
 
 # Parameters for yaw and pitch splines
@@ -74,6 +79,8 @@ access_parameters_mutex = Lock()
 
 # Current State Callback
 def current_state_callback(msg):
+    # This is important!!!
+    global current_arm_state
     with access_parameters_mutex:
         current_arm_state = msg
 
@@ -84,12 +91,11 @@ def yaw_pitch_callback(msg):
     global current_arm_state
     global t
     with access_parameters_mutex:
-        print("Received command", msg)
+        print("\n\nReceived command", msg, "\n Current state", current_arm_state, "\n")
         yaw_params.setspline(msg.yaw, current_arm_state.position[0],
                               current_arm_state.velocity[0], t)
         pitch_params.setspline(msg.pitch, current_arm_state.position[1],
                                current_arm_state.velocity[1], t)
-    
 
 
 #
@@ -129,11 +135,12 @@ if __name__ == "__main__":
     initial_msg.yaw = 0.0
     initial_msg.pitch = 0.0
 
-    # yaw_pitch_callback(initial_msg)
+    # Reset position
+    yaw_pitch_callback(initial_msg)
 
     t = 0.0
-    min_yaw = -1.5
-    max_yaw = 1.5
+    min_yaw = -2
+    max_yaw = 2
 
     # Subscriber user position goals
     # Now that the variables are valid, create/enable the subscriber
@@ -158,7 +165,8 @@ if __name__ == "__main__":
         with access_parameters_mutex:
             (yawpos, yawvel, yawtor) = yaw_params.get_point(t)
             (pitchpos, pitchvel, pitchtor) = pitch_params.get_point(t)
-            print(t, yawpos, pitchpos)
+            if round(t * 1000) % 100 < 10:
+                print("yaw command:", t, yawpos, pitchpos)
 
         # Build and send (publish) the command message.
         command_msg.header.stamp = servotime
