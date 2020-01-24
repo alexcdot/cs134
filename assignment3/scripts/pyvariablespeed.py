@@ -71,7 +71,7 @@ if __name__ == "__main__":
     rospy.sleep(0.4)
 
     command_msg = JointState()
-    command_msg.name.append('Dwarfs/Doc')    # Replace Family/Name
+    command_msg.name.append('Boogaloo/yaw')    # Replace Family/Name
     command_msg.position.append(0.0)
     command_msg.velocity.append(0.0)
     command_msg.effort.append(0.0)

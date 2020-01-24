@@ -90,9 +90,12 @@ def yaw_pitch_callback(msg):
     global pitch_params
     global current_arm_state
     global t
+    min_yaw = -2
+    max_yaw = 2
     with access_parameters_mutex:
         print("\n\nReceived command", msg, "\n Current state", current_arm_state, "\n")
-        yaw_params.setspline(msg.yaw, current_arm_state.position[0],
+        clamped_yaw  = min(max(msg.yaw, min_yaw), max_yaw) # clamp the commanded 
+        yaw_params.setspline(clamped_yaw, current_arm_state.position[0],
                               current_arm_state.velocity[0], t)
         pitch_params.setspline(msg.pitch, current_arm_state.position[1],
                                current_arm_state.velocity[1], t)
@@ -139,8 +142,6 @@ if __name__ == "__main__":
     yaw_pitch_callback(initial_msg)
 
     t = 0.0
-    min_yaw = -2
-    max_yaw = 2
 
     # Subscriber user position goals
     # Now that the variables are valid, create/enable the subscriber
@@ -170,7 +171,7 @@ if __name__ == "__main__":
 
         # Build and send (publish) the command message.
         command_msg.header.stamp = servotime
-        command_msg.position[0]  = min(max(yawpos, min_yaw), max_yaw) # clamp the commanded 
+        command_msg.position[0]  = yawpos # clamp the commanded 
         command_msg.velocity[0]  = yawvel
         command_msg.effort[0]    = yawtor
 
