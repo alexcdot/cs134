@@ -136,9 +136,9 @@ def faces_callback(msg):
     if len(msg.faces) > 0:
         # find the face with the highest confidence
         face_i = 0
-        face_c = msg.faces[0].confidence
+        face_c = msg.faces[0].face.height
         for i in range(1, len(msg.faces)):
-            c = msg.faces[i].confidence
+            c = msg.faces[i].face.height
             if c > face_c:
                 face_i = i
                 face_c = c
