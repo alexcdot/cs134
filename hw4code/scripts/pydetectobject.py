@@ -40,7 +40,7 @@ class Detector:
         # Pick the topic names.  The source image topic can be
         # remapped in the command line.  The '~' places the output
         # image topic will be under the node name.
-        source_topic = rospy.resolve_name("image")
+        source_topic = rospy.resolve_name("/usb_cam/image_raw")
         output_topic = rospy.resolve_name("~image")
 
         # Subscribe to the source topic.  Using a queue size of one
