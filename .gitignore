@@ -3,5 +3,5 @@ video_stream_opencv
 hebiros
 hebi_cpp_api_ros
 single
-CMakeLists.txt
 .vscode
+/CMakeLists.txt
