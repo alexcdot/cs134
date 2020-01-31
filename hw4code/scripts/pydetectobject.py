@@ -90,8 +90,8 @@ class Detector:
         for (x,y,w,h) in objects:
             cv2.rectangle(cvImage,(x,y),(x+w,y+h),(255,0,0),2)
             detection_msg = Rect()
-            detection_msg.x = x
-            detection_msg.y = y
+            detection_msg.x = x + w/2
+            detection_msg.y = y + h/2
             detection_msg.width = w
             detection_msg.height = h
             self.tplink_publisher.publish(detection_msg)
