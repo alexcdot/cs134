@@ -16,6 +16,7 @@ import rospy
 import sensor_msgs.msg
 import cv2
 import cv_bridge
+from opencv_apps.msg import Rect
 
 
 #
@@ -42,6 +43,7 @@ class Detector:
         # image topic will be under the node name.
         source_topic = rospy.resolve_name("/usb_cam/image_raw")
         output_topic = rospy.resolve_name("~image")
+        tplink_output_topic = rospy.resolve_name("~tplink")
 
         # Subscribe to the source topic.  Using a queue size of one
         # means only the most recent message is stored for the next
@@ -55,12 +57,17 @@ class Detector:
         self.publisher = rospy.Publisher(output_topic,
                                          sensor_msgs.msg.Image,
                                          queue_size=1)
+        # Publish to the tplink output topic.
+        self.tplink_publisher = rospy.Publisher(tplink_output_topic,
+                                         Rect,
+                                         queue_size=1)
 
         # Report.
         rospy.loginfo("Detector configured with:")
         rospy.loginfo("Cascade XML file: " + XMLfile)
         rospy.loginfo("Image source topic: " + source_topic)
         rospy.loginfo("Image output topic: " + output_topic)
+        rospy.loginfo("Tplink Rect output topic: " + tplink_output_topic)
 
     def process(self, rosImage):
         # Convert into OpenCV image.
@@ -77,11 +84,18 @@ class Detector:
                                                  flags=cv2.CASCADE_SCALE_IMAGE)
 
         # For the fun of it.  This should also be published!
-        print objects
+        print(objects)
 
         # Indicate the objects in the image.
         for (x,y,w,h) in objects:
             cv2.rectangle(cvImage,(x,y),(x+w,y+h),(255,0,0),2)
+            detection_msg = Rect()
+            detection_msg.x = x
+            detection_msg.y = y
+            detection_msg.width = w
+            detection_msg.height = h
+            self.tplink_publisher.publish(detection_msg)
+
 
         # Convert back into a ROS image and republish (for debugging).
         self.publisher.publish(
