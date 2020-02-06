@@ -1,0 +1,50 @@
+<launch>
+  <!-- Define general parameters.  These can be overwritten by the
+       roslaunch command line. -->
+  <arg name="model" default="$(find hw5code)/urdf/robot.urdf"/>
+  <arg name="cfg"   default="$(find hw5code)/rviz/viewrobot.rviz" />
+
+
+  <!-- Load the URDF file into the robot_description parameter. -->
+  <param name="robot_description" textfile="$(arg model)"/>
+
+
+  <!-- Start a "fake" HEBI node, i.e. a general joint_state publisher.
+       The 'use_gui' argument creates joint position sliders.  -->
+  <node pkg="joint_state_publisher_gui" type="joint_state_publisher_gui"
+	name="jsp">
+    <remap from="joint_states" to="/hebiros/robot/feedback/joint_state"/>
+  </node>
+
+  <!-- INSTEAD of the fake HEBI node, we will eventually use a real
+       hebi_node...  The output="screen" shows the messages.  -->
+  <!--
+  <node pkg="hebiros" type="hebiros_node" name="hebiros_node"
+        output="screen"/>
+  <node pkg="myrobot" type="definerobot" name="definerobot"
+	output="screen"/>
+  -->
+
+
+  <!-- Start your forward kinematics node. -->
+  <!-- For pyhton version use type="pyfkinnode.py" -->
+  <node pkg="hw5code" type="fkinnode" name="fkinnode" output="screen">
+    <remap from="joint_states" to="/hebiros/robot/feedback/joint_state"/>
+  </node>    
+
+
+  <!-- Start the ROS forward kinematics, the robot_state_publisher. -->
+  <node pkg="robot_state_publisher" type="robot_state_publisher"
+	name="rsp">
+    <param name="ignore_timestamp" value="true"/>
+    <remap from="joint_states" to="/hebiros/robot/feedback/joint_state"/>
+  </node>    
+
+
+  <!-- Run the rviz visualization.  The viewrobot.rviz config file
+       sets up the URDF viewing.  And uses a 3Hz frame rate to prevent
+       a VM from overloading. -->
+  <node pkg="rviz" type="rviz" name="rviz" args="-d $(arg cfg)"
+	output="screen"/>
+
+</launch>

@@ -1,0 +1,5 @@
+<launch>
+  <node name="hebiros" pkg="hebiros" type="hebiros_node"/>
+  <node name="define_robot" pkg="hw5code" type="pydefinerobot.py"/>
+  <!-- <node name="move_to" pkg="hw4code" type="pymovetoimplicit.py"/> -->
+</launch>

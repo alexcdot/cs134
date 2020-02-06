@@ -1,0 +1,4 @@
+float64 elbow_pos
+float64 elbow_vel
+float64 wrist_pos
+float64 wrist_vel
