@@ -1,0 +1,7 @@
+<launch>
+  <node name="detector" pkg="opencv_apps" type="face_detection" args="image:=/usb_cam/image_raw"/>
+  <node name="usb_cam" pkg="usb_cam" type="usb_cam_node" args="_video_device:=/dev/video0"/>
+  <node name="hebiros" pkg="hebiros" type="hebiros_node"/>
+  <node name="define_robot" pkg="assignment3" type="pydefinerobot.py"/>
+  <node name="move_to" pkg="assignment3" type="pymovetoimplicit.py"/>
+</launch>

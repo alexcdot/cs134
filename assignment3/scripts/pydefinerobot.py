@@ -6,19 +6,20 @@
 
 import sys
 import rospy
+import time
 
 from hebiros.srv import AddGroupFromNamesSrv, SizeSrv
 
 
 if __name__ == "__main__":
+    time.sleep(1)
     # Initialize the basic ROS node.
     rospy.init_node('pydefinerobot')
-
     # You can choose to wait until the hebiros_node is running (or
     # else fail the below).
     rospy.loginfo("Waiting for the hebiros_node...")
     rospy.wait_for_service('/hebiros/add_group_from_names')
-
+    time.sleep(1)
     # To communicate with the Hebi node, we create a proxy for their
     # service.  Note the service arguments (to be communicated both to
     # and from the service) are set by hebiros::AddGroupFromNamesSrv.

@@ -8,6 +8,7 @@
 import sys
 import rospy
 import math
+import time
 
 from sensor_msgs.msg import JointState
 from std_msgs.msg    import Float64
@@ -162,6 +163,7 @@ def faces_callback(msg):
 #   Main Code
 #
 if __name__ == "__main__":
+    time.sleep(3)
     # Initialize the basic ROS node.
     rospy.init_node('pymovetoimplicit')
 
