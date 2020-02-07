@@ -45,28 +45,35 @@ class FKin:
 
     def process(self, msg):
         # Start before Joint 0.
-        x = vec(0, 0, 0)
+        x = vec(0, 0.1, 0)
         R = Rz(0)
 
         # Rotate Joint 0 about Z axis.
         R = R * Rz(msg.position[0])
 
         # Shift to Joint 1.
-        x = x + R.apply(vec(0.0, 0.05, 0.081))
-        R = R * Rx(np.pi/2)
+        x = x + R.apply(vec(0.0, 0.0, 0.1))
+        R = R * Ry(np.pi/2)
 
         # Rotate Joint 1 about Z axis.
         R = R * Rz(msg.position[1])
 
         # Shift to Joint 2.
-        x = x + R.apply(vec(0.5, 0.0, 0.036))
+        x = x + R.apply(vec(-0.5, 0.0, 0))
         R = R;
 
         # Rotate Joint 2 about Z axis.
         R = R * Rz(msg.position[2])
 
+        # Shift to Joint 3.
+        x = x + R.apply(vec(0, -0.3, 0))
+        R = R;
+
+        # Rotate Joint 3 about Z axis.
+        R = R * Rz(msg.position[3])
+
         # Shift to the tip.
-        x = x + R.apply(vec(0.5, 0.0, 0.0335))
+        x = x + R.apply(vec(0, 0.0, 0.1))
         R = R * Ry(np.pi/2);
 
         # Publish the tip point.  Note that we declare the point as
