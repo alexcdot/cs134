@@ -1,7 +1,7 @@
 <launch>
   <!-- Define general parameters.  These can be overwritten by the
        roslaunch command line. -->
-  <arg name="model" default="$(find hw5code)/urdf/robot.urdf"/>
+  <arg name="model" default="$(find hw5code)/urdf/robot_nic_approx.urdf"/>
   <arg name="cfg"   default="$(find hw5code)/rviz/viewrobot.rviz" />
 
 
@@ -11,8 +11,9 @@
 
   <!-- Start a "fake" HEBI node, i.e. a general joint_state publisher.
        The 'use_gui' argument creates joint position sliders.  -->
-  <node pkg="joint_state_publisher_gui" type="joint_state_publisher_gui"
+  <node pkg="joint_state_publisher" type="joint_state_publisher"
 	name="jsp">
+    <param name="use_gui" value="true"/>
     <remap from="joint_states" to="/hebiros/robot/feedback/joint_state"/>
   </node>
 
@@ -28,7 +29,7 @@
 
   <!-- Start your forward kinematics node. -->
   <!-- For pyhton version use type="pyfkinnode.py" -->
-  <node pkg="hw5code" type="fkinnode" name="fkinnode" output="screen">
+  <node pkg="hw5code" type="pyfkinnode_nic.py" name="fkinnode" output="screen">
     <remap from="joint_states" to="/hebiros/robot/feedback/joint_state"/>
   </node>    
 
