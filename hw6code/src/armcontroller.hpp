@@ -30,8 +30,12 @@ class ArmController {
     ros::NodeHandle nh_;
 
     ros::Subscriber arm_state_sub_;
+    ros::Subscriber tip_goal_sub_;
+    ros::Subscriber joint_goal_sub_;
+    
     ros::Publisher point_pub_;
     ros::Publisher pose_pub_;
+    ros::Publisher joint_command_pub_;
 
     public:
 
