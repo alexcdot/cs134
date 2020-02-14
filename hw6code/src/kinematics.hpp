@@ -50,7 +50,7 @@ class Kinematics {
     Kinematics();
     FKinResult runForwardKinematics(Vector6d joint_vals);
     Vector6d runInverseKinematics(Vector6d target_pose, Vector6d guess);
-    const std::string JointNames[] = {
+    const std::string JointNames[6] = {
         "Boogaloo/yaw",
         "Boogaloo/shoulder",
         "Boogaloo/elbow",

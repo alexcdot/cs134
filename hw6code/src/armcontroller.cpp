@@ -40,8 +40,8 @@ ArmController::ArmController() {
     kinematics_ = Kinematics();
 
     arm_state_sub_ = nh_.subscribe("joint_states", 10, &ArmController::processJointState, this);
-    point_pub_ = nh_.advertise<geometry_msgs::PointStamped>("/tippoint", 10);
-    pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/tippose", 10);
+    point_pub_ = nh_.advertise<geometry_msgs::PointStamped>("/tip_point", 10);
+    pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/tip_pose", 10);
 
     // Goal subscribers
     tip_goal_sub_ = nh_.subscribe("/joint_goal", 10, &ArmController::processJointCommand, this);
@@ -62,6 +62,7 @@ void ArmController::runController(const ros::TimerEvent& time) {
     double t = time.current_real();
     // TODO: Maybe use a mutex here
     sensor_msgs::JointState command_msg;
+    // TODO: run controller updates 
     command_msg.position.resize(6);
     command_msg.velocity.resize(6);
     command_msg.effort.resize(6);
@@ -105,13 +106,52 @@ void ArmController::runController(const ros::TimerEvent& time) {
 }
 
 void ArmController::processJointCommand(const boogaloo::JointCommand::ConstPtr& msg) {
-    // TODO: switch to moving joint mode
-    current_state_ = ArmControllerState::MOVING_JOINT;
+    if (msg->pose_follow) {
+        current_state_ = ArmControllerState::MOVING_POINT;
+    } else {
+        current_state_ = ArmControllerState::MOVING_JOINT;
+    }
+
+    ros::Time curr_time = ros::Time::now();
+    Vector6d joint_command;
+    joint_command << msg->yaw, msg->shoulder, msg->elbow,
+                     msg->wrist, msg->twist, msg->gripper;
+    if (!msg->pose_follow) {
+        for (int i = 0; i < 6; i++) {
+            spline_managers_[i].setSpline(joint_command[i], current_joint_pos_[i],
+                                        current_joint_vel_[i], curr_time);
+        }
+    }
 }
 
 void ArmController::processPoseCommand(const boogaloo::PoseCommand::ConstPtr& msg) {
     // TODO: switch to moving tip mode
-    current_state_ = ArmControllerState::MOVING_POINT;
+    if (msg->pose_follow) {
+        current_state_ = ArmControllerState::MOVING_POINT;
+    } else {
+        current_state_ = ArmControllerState::MOVING_JOINT;
+    }
+    ros::Time curr_time = ros::Time::now();
+    Vector6d pose_command;
+    pose_command << msg->pos.x, msg->pos.y, msg->pos.z,
+                    msg->wrist_angle, msg->wrist_roll, msg->gripper;
+
+    if (current_state_ == ArmControllerState::MOVING_POINT) {
+        for (int i = 0; i < 6; i++) {
+            spline_managers_[i].setSpline(pose_command[i], current_pose_pos_[i],
+                                        current_pose_vel_[i], curr_time);
+        }
+    } else if (current_state_ == ArmControllerState::MOVING_JOINT) {
+        // TODO: Improve the guess
+        Vector6d guess;
+        guess << -1.57, 0, 0, 0, 0, 0;
+        Vector6d joint_command = kinematics_.runInverseKinematics(pose_command, guess);
+
+        for (int i = 0; i < 6; i++) {
+            spline_managers_[i].setSpline(joint_command[i], current_joint_pos_[i],
+                                        current_joint_vel_[i], curr_time);
+        }
+    }
 }
 
 
