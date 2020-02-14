@@ -50,6 +50,11 @@ void ArmController::processJointState(const sensor_msgs::JointState::ConstPtr& m
     
     Vector6d guess;
     guess << -1.57, 0, 0, 0, 0, 0;
+
     Vector6d rebuilt = kinematics_.runInverseKinematics(res.pose, guess);
+    
+    cout << endl << res.jacobian << endl << endl;
+
+    cout << "----" << endl;
 }
 

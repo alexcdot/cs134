@@ -24,7 +24,6 @@ FKinResult Kinematics::runForwardKinematics(Vector6d joint_vals) {
     }
     // From final motor to tip
     total_pos += total_rot * ARM_PROP.translations[5];
-    // The last rotation comes from the gripeer, so multiplying the joint_val is unnecessary
     total_rot *= ARM_PROP.rotations[5];
     joint_poses.push_back(total_pos);
     joint_oris.push_back(total_rot);
@@ -37,21 +36,26 @@ FKinResult Kinematics::runForwardKinematics(Vector6d joint_vals) {
     res.pose(2) = total_pos(2);
 
     // Calculate tip orientation vector
-    Vector3d tip_ori = (joint_poses[GRIPPER] - joint_poses[TWIST]).normalized();
-    // X value of orientation is -z axis of orientation
-    double trig_x = -tip_ori(2);
-    // Calculate tip position vector along the table plane
-    Vector3d tip_vec = (joint_poses[WRIST] - joint_poses[ELBOW]);
-    tip_vec(2) = 0;
-    tip_vec = tip_vec.normalized();
-    // X value is dot of position and orientation vector
-    double trig_y = tip_vec.dot(tip_ori);
+    Vector3d tip_ori = (joint_oris[GRIPPER] * Vector3d::UnitZ()).normalized();
+    
+    // TODO this makes an assumption about the zero position
+    double yaw = joint_vals(YAW) + PI/2;
+    
+    Vector2d yaw_vec;
+    yaw_vec << cos(yaw), sin(yaw);
 
+    // X value of gripper is -z axis of orientation
+    double grip_x = -tip_ori(2);
+    // Y value of gripper is sqrt(x^2 + y^2) * direction facing
+    double grip_y = sqrt(pow(tip_ori(0), 2) + pow(tip_ori(1), 2)) * 
+        ((tip_ori.head(2).dot(yaw_vec) >= 0) ? 1 : -1);
+    
     // Tip orientation angle
-    res.pose(3) = atan2(trig_y, trig_x);
-
+    res.pose(3) = atan2(grip_y, grip_x);
+    
+    
     // Twist is negative the twist plus orientation of tip (scaled by how far down arm is pointing)
-    res.pose(4) = -joint_vals[TWIST] + trig_x * atan2(tip_vec(1), tip_vec(0));
+    res.pose(4) = -joint_vals[TWIST] + grip_x * yaw;
 
     // Grip is just grip :)
     res.pose(5) = joint_vals[GRIPPER];
@@ -75,8 +79,8 @@ FKinResult Kinematics::runForwardKinematics(Vector6d joint_vals) {
     // Define claw orientation jacobian
     res.jacobian.block<1, 5>(3, 0) << 0, 1, 1, 1, 0;
     // Define claw twist jacobian
-    double pitch_derivative = -sin(res.pose(3)) * atan2(tip_vec(1), tip_vec(0));
-    res.jacobian.block<1, 5>(4, 0) << cos(res.pose(3)), 
+    double pitch_derivative = -grip_y * yaw;
+    res.jacobian.block<1, 5>(4, 0) << grip_x, 
                                     pitch_derivative,
                                     pitch_derivative,
                                     pitch_derivative,
@@ -87,42 +91,66 @@ FKinResult Kinematics::runForwardKinematics(Vector6d joint_vals) {
     return res;
 }
 
-Vector6d Kinematics::runInverseKinematics(Vector6d target_pose, Vector6d guess) {
-    Vector6d current = Vector6d(guess);
-    FKinResult fkin = runForwardKinematics(current);
-    Vector6d delta = target_pose - fkin.pose;
+Vector6d Kinematics::runInverseKinematics(Vector6d target_pose, Vector6d joint_guess) {
+    
+    // Initialize initial joint config, fkin, and delta
+    Vector6d joint_current = Vector6d(joint_guess);
+    FKinResult fkin = runForwardKinematics(joint_current);
+    Vector6d pose_delta = target_pose - fkin.pose;
+
+    // Use transpose "spring" method to get close
     int i = 0;
-    while (delta.norm() > 0.001 && i < 30) {
-        Vector6d poseDelta = fkin.jacobian.inverse() * delta;
+    while (pose_delta.norm() > 0.001) {
+        // Calculate optimal move dist (from some paper, I assume it's true)
+        Vector6d jj = fkin.jacobian * fkin.jacobian.transpose() * pose_delta;
+        double alpha = pose_delta.dot(jj) / jj.dot(jj);
 
-        fkin = runForwardKinematics(current + poseDelta);
+        // Calculate joint delta from spring forces
+        Vector6d joint_delta = alpha * fkin.jacobian.transpose() * pose_delta;
 
-        Vector6d newDelta = target_pose - fkin.pose;
+        // Run fkin on new point
+        fkin = runForwardKinematics(joint_current + joint_delta);
 
-        while (newDelta.norm() > delta.norm()) {
-            poseDelta /= 2;
-            fkin = runForwardKinematics(current + poseDelta);
-            newDelta = target_pose - fkin.pose;
-        }
+        // Update current joints and pose delta
+        pose_delta = target_pose - fkin.pose;
+        joint_current += joint_delta;
 
-        current += poseDelta;
-
-        while (delta.norm() < newDelta.norm()) {
-            cout << "uhh" << endl;
-            cout << fkin.jacobian << endl;
-            cout << fkin.jacobian.inverse() << endl;
-            cout << delta << endl<<endl;
-            cout << fkin.jacobian.inverse() * delta << endl;
-            cout << "---" << endl;
-            ros::Duration(0.1).sleep();
-        }
-
-        delta = newDelta;
         i++;
     }
-    cout << delta.norm() << endl;
-    cout << fkin.jacobian.inverse() << endl;
-    cout << current << endl << endl;
-    cout << fkin.pose << endl;
-    return current;
+
+    // Use inverse kinematics to exact in on pose
+    int j = 0;
+    while (pose_delta.norm() > 0.0000001 && j < 30) {
+        // Calculate joint delta from inverse motions
+        Vector6d joint_delta = fkin.jacobian.inverse() * pose_delta;
+
+        // Run fkin on this new point
+        fkin = runForwardKinematics(joint_current + joint_delta);
+
+        // Reduce joint delta until it actually results in a better position
+        // This prevents (or at least mitigates) singularity slingshotting
+        Vector6d new_pose_delta = target_pose - fkin.pose;
+        while(new_pose_delta.norm() > pose_delta.norm()) {
+            joint_delta /= 2;
+            fkin = runForwardKinematics(joint_current + joint_delta);
+            new_pose_delta = target_pose - fkin.pose;
+        }
+
+        // Update current joints and pose delta
+        pose_delta = new_pose_delta;
+        joint_current += joint_delta;
+
+        j++;
+    }
+
+    if (j == 30) {
+        cout << "failed to converge" << endl;
+        cout << "Guess:\n" << joint_guess << endl;
+        cout << "Current:\n" << joint_current << endl;
+        cout << "Jacobian:\n" << fkin.jacobian << endl;
+        cout << "Inverse:\n" << fkin.jacobian.transpose() << endl;
+        exit(1);
+    }
+
+    return joint_current;
 }
