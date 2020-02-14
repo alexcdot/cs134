@@ -3,6 +3,8 @@
 
 #include "common.hpp"
 
+#include "sensor_msgs/JointState.h"
+
 #define vec(x,y,z)  (Eigen::Vector3d((x), (y), (z)))
 #define Rx(q)       (Eigen::AngleAxisd((q), vec(1.0, 0.0, 0.0)).toRotationMatrix())
 #define Ry(q)       (Eigen::AngleAxisd((q), vec(0.0, 1.0, 0.0)).toRotationMatrix())
@@ -19,6 +21,12 @@ struct ArmProperties {
     vector<Matrix3d> rotations;
     vector<double> zeroes;
     vector<double> gearings;
+};
+
+struct Joints {
+    Vector6d pos;
+    Vector6d vel;
+    Vector6d torque;
 };
 
 enum JointID {
@@ -45,19 +53,18 @@ class Kinematics {
         {0, 0, 0, 0, 0, 0},
         {1, 1, 2, 3, 1, 0.5}
     };
+    
+    static const std::string JOINT_NAMES[];
 
     public:
     Kinematics();
     FKinResult runForwardKinematics(Vector6d joint_vals);
     Vector6d runInverseKinematics(Vector6d target_pose, Vector6d guess);
-    const std::string JointNames[6] = {
-        "Boogaloo/yaw",
-        "Boogaloo/shoulder",
-        "Boogaloo/elbow",
-        "Boogaloo/wrist",
-        "Boogaloo/twist",
-        "Boogaloo/gripper"
-    };
+    sensor_msgs::JointState jointsToJS(Vector6d joint_pos, Vector6d joint_vel);
+    Joints jsToJoints(sensor_msgs::JointState joints);
+    sensor_msgs::JointState toHebi(sensor_msgs::JointState normal_joints);
+    sensor_msgs::JointState fromHebi(sensor_msgs::JointState hebi_joints);
+
 };
 
 #endif

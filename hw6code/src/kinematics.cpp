@@ -1,5 +1,14 @@
 #include "kinematics.hpp"
 
+const std::string Kinematics::JOINT_NAMES[] = {
+    "Boogaloo/yaw",
+    "Boogaloo/shoulder",
+    "Boogaloo/elbow",
+    "Boogaloo/wrist",
+    "Boogaloo/twist",
+    "Boogaloo/gripper"
+};
+
 Kinematics::Kinematics() { }
 
 FKinResult Kinematics::runForwardKinematics(Vector6d joint_vals) {
@@ -100,7 +109,7 @@ Vector6d Kinematics::runInverseKinematics(Vector6d target_pose, Vector6d joint_g
 
     // Use transpose "spring" method to get close
     int i = 0;
-    while (pose_delta.norm() > 0.001) {
+    while (pose_delta.norm() > 0.01 && i < 1000) {
         // Calculate optimal move dist (from some paper, I assume it's true)
         Vector6d jj = fkin.jacobian * fkin.jacobian.transpose() * pose_delta;
         double alpha = pose_delta.dot(jj) / jj.dot(jj);
@@ -115,42 +124,93 @@ Vector6d Kinematics::runInverseKinematics(Vector6d target_pose, Vector6d joint_g
         pose_delta = target_pose - fkin.pose;
         joint_current += joint_delta;
 
+        // cout << pose_delta.norm() << endl;
         i++;
     }
 
-    // Use inverse kinematics to exact in on pose
-    int j = 0;
-    while (pose_delta.norm() > 0.0000001 && j < 30) {
-        // Calculate joint delta from inverse motions
-        Vector6d joint_delta = fkin.jacobian.inverse() * pose_delta;
+    if (i < 1000) {
+        // Use inverse kinematics to exact in on pose if springiness got close enough
+        int j = 0;
+        while (pose_delta.norm() > 0.0000001 && j < 30) {
+            // Calculate joint delta from inverse motions
+            Vector6d joint_delta = fkin.jacobian.inverse() * pose_delta;
 
-        // Run fkin on this new point
-        fkin = runForwardKinematics(joint_current + joint_delta);
-
-        // Reduce joint delta until it actually results in a better position
-        // This prevents (or at least mitigates) singularity slingshotting
-        Vector6d new_pose_delta = target_pose - fkin.pose;
-        while(new_pose_delta.norm() > pose_delta.norm()) {
-            joint_delta /= 2;
+            // Run fkin on this new point
             fkin = runForwardKinematics(joint_current + joint_delta);
-            new_pose_delta = target_pose - fkin.pose;
+
+            // Reduce joint delta until it actually results in a better position
+            // This prevents (or at least mitigates) singularity slingshotting
+            Vector6d new_pose_delta = target_pose - fkin.pose;
+            while(new_pose_delta.norm() > pose_delta.norm()) {
+                joint_delta /= 2;
+                fkin = runForwardKinematics(joint_current + joint_delta);
+                new_pose_delta = target_pose - fkin.pose;
+            }
+
+            // Update current joints and pose delta
+            pose_delta = new_pose_delta;
+            joint_current += joint_delta;
+
+            j++;
         }
 
-        // Update current joints and pose delta
-        pose_delta = new_pose_delta;
-        joint_current += joint_delta;
-
-        j++;
-    }
-
-    if (j == 30) {
-        cout << "failed to converge" << endl;
-        cout << "Guess:\n" << joint_guess << endl;
-        cout << "Current:\n" << joint_current << endl;
-        cout << "Jacobian:\n" << fkin.jacobian << endl;
-        cout << "Inverse:\n" << fkin.jacobian.transpose() << endl;
-        exit(1);
+        // if (j == 30) {
+        //     cout << "failed to converge" << endl;
+        //     cout << "Guess:\n" << joint_guess << endl;
+        //     cout << "Current:\n" << joint_current << endl;
+        //     cout << "Jacobian:\n" << fkin.jacobian << endl;
+        //     cout << "Inverse:\n" << fkin.jacobian.transpose() << endl;
+        //     exit(1);
+        // }
     }
 
     return joint_current;
+}
+
+sensor_msgs::JointState Kinematics::jointsToJS(Vector6d joint_pos, Vector6d joint_vel) {
+    sensor_msgs::JointState msg;
+    for (int i = 0; i < 6; i++) {
+        msg.name.push_back(JOINT_NAMES[i]);
+        msg.position.push_back(joint_pos(i));
+        msg.velocity.push_back(joint_pos(i));
+        msg.effort.push_back(0);
+    }
+    msg.header.frame_id = "world";
+    return msg;
+}
+
+Joints Kinematics::jsToJoints(sensor_msgs::JointState joints) {
+    Joints ret;
+    for (int i = 0; i < 6; i++) {
+        ret.pos(i) = joints.position[i];
+        ret.vel(i) = joints.velocity[i];
+        ret.torque(i) = 0;
+    }
+    return ret;
+}
+
+sensor_msgs::JointState Kinematics::toHebi(sensor_msgs::JointState normal_joints) {
+    sensor_msgs::JointState hebi_joints;
+    for (int i = 0; i < 6; i++) {
+        hebi_joints.name.push_back(normal_joints.name[i]);
+        hebi_joints.position.push_back(ARM_PROP.zeroes[i] +
+            normal_joints.position[i] / ARM_PROP.gearings[i]);
+        hebi_joints.velocity.push_back(normal_joints.velocity[i] / ARM_PROP.gearings[i]);
+        hebi_joints.effort.push_back(normal_joints.effort[i] * ARM_PROP.gearings[i]);
+    }
+    hebi_joints.header = normal_joints.header;
+    return hebi_joints;
+}
+
+sensor_msgs::JointState Kinematics::fromHebi(sensor_msgs::JointState hebi_joints) {
+    sensor_msgs::JointState normal_joints;
+    for (int i = 0; i < 6; i++) {
+        normal_joints.name.push_back(hebi_joints.name[i]);
+        normal_joints.position.push_back(-ARM_PROP.zeroes[i] +
+            hebi_joints.position[i] * ARM_PROP.gearings[i]);
+        normal_joints.velocity.push_back(hebi_joints.velocity[i] * ARM_PROP.gearings[i]);
+        normal_joints.effort.push_back(hebi_joints.effort[i] / ARM_PROP.gearings[i]);
+    }
+    normal_joints.header = hebi_joints.header;
+    return normal_joints;
 }

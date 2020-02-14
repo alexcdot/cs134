@@ -12,9 +12,13 @@
 #include "geometry_msgs/PoseStamped.h"
 
 enum class ArmControllerState {
-    STOPPED,
     MOVING_JOINT,
     MOVING_POINT
+};
+
+struct PosVelPair {
+    Vector6d pos;
+    Vector6d vel;
 };
 
 class ArmController {
@@ -35,7 +39,11 @@ class ArmController {
     
     ros::Publisher point_pub_;
     ros::Publisher pose_pub_;
+
     ros::Publisher joint_command_pub_;
+    ros::Publisher joint_state_pub_;
+
+    ros::Timer run_timer_;
 
     public:
 
@@ -44,9 +52,10 @@ class ArmController {
     void processJointCommand(const boogaloo::JointCommand::ConstPtr& msg);
     void processPoseCommand(const boogaloo::PoseCommand::ConstPtr& msg);
 
-    void processJointState(const sensor_msgs::JointState::ConstPtr& msg);
-
     void runController(const ros::TimerEvent& time);
+
+    void setSplines(Vector6d goal_pos, Vector6d start_pos, Vector6d start_vel, ros::Time t_start);
+    PosVelPair getSplinePoints(ros::Time time);
 };
 
 #endif
