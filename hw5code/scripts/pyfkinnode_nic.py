@@ -66,7 +66,7 @@ class FKin:
         R = R * Rz(msg.position[2])
 
         # Shift to Joint 3.
-        x = x + R.apply(vec(0.0, -0.3, 0.0))
+        x = x + R.apply(vec(0.0, 0.3, 0.0))
         R = R
 
         # Rotate Joint 3 about Z axis.

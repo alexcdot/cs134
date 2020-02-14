@@ -29,7 +29,7 @@
 
   <!-- Start your forward kinematics node. -->
   <!-- For pyhton version use type="pyfkinnode.py" -->
-  <node pkg="hw5code" type="pyfkinnode_nic.py" name="fkinnode" output="screen">
+  <node pkg="boogaloo" type="armcontroller" name="fkinnode" output="screen">
     <remap from="joint_states" to="/hebiros/robot/feedback/joint_state"/>
   </node>    
 

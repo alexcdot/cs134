@@ -11,6 +11,7 @@
 
   <link name="world"/>
 
+  <!-- YAW MOTOR -->
 
   <joint name="connect-world-motor0base" type="fixed">
     <parent link="world"/>
@@ -28,6 +29,8 @@
 
   <link name="motor0output"> </link>
 
+  <!-- SHOULDER MOTOR -->
+
   <joint name="connect-motor0output-motor1base" type="fixed">
     <parent link="motor0output"/>
     <child  link="motor1base"/>
@@ -44,6 +47,7 @@
 
   <link name="motor1output"> </link>
 
+  <!-- ELBOW MOTOR -->
 
   <joint name="connect-motor1output-motor2base" type="fixed">
     <parent link="motor1output"/>
@@ -61,6 +65,7 @@
 
   <link name="motor2output"> </link>
 
+  <!-- WRIST MOTOR -->
 
   <joint name="connect-motor2output-motor3base" type="fixed">
     <parent link="motor2output"/>
@@ -78,6 +83,7 @@
 
   <link name="motor3output"> </link>
 
+  <!-- TWIST MOTOR -->
 
   <joint name="connect-motor3output-motor4base" type="fixed">
     <parent link="motor3output"/>
@@ -95,6 +101,7 @@
 
   <link name="motor4output"> </link>
 
+  <!-- TIP -->
 
   <joint name="connect-motor4output-tip" type="fixed">
     <parent link="motor4output"/>
