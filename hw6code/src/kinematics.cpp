@@ -24,6 +24,7 @@ FKinResult Kinematics::runForwardKinematics(Vector6d joint_vals) {
     }
     // From final motor to tip
     total_pos += total_rot * ARM_PROP.translations[5];
+    // The last rotation comes from the gripeer, so multiplying the joint_val is unnecessary
     total_rot *= ARM_PROP.rotations[5];
     joint_poses.push_back(total_pos);
     joint_oris.push_back(total_rot);
@@ -120,7 +121,7 @@ Vector6d Kinematics::runInverseKinematics(Vector6d target_pose, Vector6d guess) 
         i++;
     }
     cout << delta.norm() << endl;
-    cout << fkin.jacobian.inverse << endl;
+    cout << fkin.jacobian.inverse() << endl;
     cout << current << endl << endl;
     cout << fkin.pose << endl;
     return current;

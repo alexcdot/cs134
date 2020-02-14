@@ -33,10 +33,17 @@ enum JointID {
 class Kinematics {
     private:
     ArmProperties ARM_PROP = {
-    {vec(0, 0.1, 0), vec(0, 0, 0.1), vec(-0.6, 0, 0), vec(0, 0.3, 0), vec(0.15, 0, 0.1), vec(0.0, 0.0, 0.1)},
-    {Rz(0), Ry(PI/2), Rz(0), Rz(0), Ry(PI/2), Rz(0)},
-    {0, 0, 0, 0, 0, 0},
-    {1, 1, 2, 3, 1, 0.5}
+        {
+            vec(0, 0.1, 0),
+            vec(0, 0, 0.1),
+            vec(-0.6, 0, 0),
+            vec(0, 0.3, 0),
+            vec(0.15, 0, 0.1),
+            vec(0.0, 0.0, 0.1)
+        },
+        {Rz(0), Ry(PI/2), Rz(0), Rz(0), Ry(PI/2), Rz(0)},
+        {0, 0, 0, 0, 0, 0},
+        {1, 1, 2, 3, 1, 0.5}
     };
 
     public:
