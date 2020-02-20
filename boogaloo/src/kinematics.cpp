@@ -9,7 +9,11 @@ const std::string Kinematics::JOINT_NAMES[] = {
     "Boogaloo/gripper"
 };
 
-Kinematics::Kinematics() { }
+const double Kinematics::ERR = 0.01;
+
+Kinematics::Kinematics() {
+    zero_pos_ = runForwardKinematics(Vector6d::Zero());
+}
 
 FKinResult Kinematics::runForwardKinematics(Vector6d joint_vals) {
     assert(ARM_PROP.translations.size() == 6);
@@ -48,7 +52,7 @@ FKinResult Kinematics::runForwardKinematics(Vector6d joint_vals) {
     Vector3d tip_ori = (joint_oris[GRIPPER] * Vector3d::UnitZ()).normalized();
     
     // TODO this makes an assumption about the zero position
-    double yaw = joint_vals(YAW) + PI/2;
+    double yaw = joint_vals(YAW);
     
     Vector2d yaw_vec;
     yaw_vec << cos(yaw), sin(yaw);
@@ -100,71 +104,74 @@ FKinResult Kinematics::runForwardKinematics(Vector6d joint_vals) {
     return res;
 }
 
-Vector6d Kinematics::runInverseKinematics(Vector6d target_pose, Vector6d joint_guess) {
-    
-    // Initialize initial joint config, fkin, and delta
-    Vector6d joint_current = Vector6d(joint_guess);
-    FKinResult fkin = runForwardKinematics(joint_current);
-    Vector6d pose_delta = target_pose - fkin.pose;
+Vector6d Kinematics::runInverseKinematics(Vector6d target_pose) {
+    Matrix3d total_rot = Matrix3d::Identity();
+    Vector3d total_pos = Vector3d::Zero();
 
-    // Use transpose "spring" method to get close
-    int i = 0;
-    while (pose_delta.norm() > 0.01 && i < 1000) {
-        // Calculate optimal move dist (from some paper, I assume it's true)
-        Vector6d jj = fkin.jacobian * fkin.jacobian.transpose() * pose_delta;
-        double alpha = pose_delta.dot(jj) / jj.dot(jj);
+    vector<Vector3d> zero_poses = vector<Vector3d>();
 
-        // Calculate joint delta from spring forces
-        Vector6d joint_delta = alpha * fkin.jacobian.transpose() * pose_delta;
+    // Run forward kinematics on zero position, summing total position through 
+    // 5 joints
+    for(int i = 0; i < 5; i++) {
+        total_pos += total_rot * ARM_PROP.translations[i];
+        total_rot *= ARM_PROP.rotations[i];
 
-        // Run fkin on new point
-        fkin = runForwardKinematics(joint_current + joint_delta);
-
-        // Update current joints and pose delta
-        pose_delta = target_pose - fkin.pose;
-        joint_current += joint_delta;
-
-        // cout << pose_delta.norm() << endl;
-        i++;
+        // Log position of each joint
+        zero_poses.push_back(total_pos);
     }
+    // From final motor to tip
+    total_pos += total_rot * ARM_PROP.translations[5];
+    zero_poses.push_back(total_pos);
 
-    if (i < 1000) {
-        // Use inverse kinematics to exact in on pose if springiness got close enough
-        int j = 0;
-        while (pose_delta.norm() > 0.0000001 && j < 30) {
-            // Calculate joint delta from inverse motions
-            Vector6d joint_delta = fkin.jacobian.inverse() * pose_delta;
+    // Distance from yaw motor to target tip
+    double yaw_to_tip = (target_pose.head(3) - zero_poses[YAW]).head(2).norm();
+    // Fixed side offset of gripper from yaw
+    double side_offset = zero_poses[GRIPPER].y() - zero_poses[YAW].y();
+    // Distance we need to extend
+    double extend = sqrt(yaw_to_tip*yaw_to_tip - side_offset*side_offset);
 
-            // Run fkin on this new point
-            fkin = runForwardKinematics(joint_current + joint_delta);
+    // Conveniently rename constants we want
+    double wrist_len = abs(ARM_PROP.translations[TWIST].x()) + 
+                       abs(ARM_PROP.translations[GRIPPER].z());
+    double forearm_len = abs(ARM_PROP.translations[WRIST].y());
+    double reararm_len = abs(ARM_PROP.translations[ELBOW].x());
 
-            // Reduce joint delta until it actually results in a better position
-            // This prevents (or at least mitigates) singularity slingshotting
-            Vector6d new_pose_delta = target_pose - fkin.pose;
-            while(new_pose_delta.norm() > pose_delta.norm()) {
-                joint_delta /= 2;
-                fkin = runForwardKinematics(joint_current + joint_delta);
-                new_pose_delta = target_pose - fkin.pose;
-            }
+    // Wrist angle
+    double wrist_angle = target_pose(3);
+    // Distance first two joints need to cover
+    double extend_2 = extend - wrist_len * sin(wrist_angle);
+    // If asked to reach backwards, don't
+    extend_2 = max(ERR, extend_2);
+    // z height first two joints need to reach 2
+    double z_2 = target_pose.z() - zero_poses[SHOULDER].z() + 
+                 wrist_len * cos(wrist_angle);
+    // Diagonal distance of first two 
+    double diag = sqrt(extend_2*extend_2 + z_2*z_2);
+    // Make sure diag is in bounds
+    diag = min(reararm_len + forearm_len - ERR, diag);
+    diag = max(reararm_len - forearm_len + ERR, diag);
+    // Get triangle angles
+    double diag_ang = acos((reararm_len*reararm_len + forearm_len*forearm_len - diag*diag) / (2 * reararm_len * forearm_len));
+    double forearm_ang = acos((diag*diag + reararm_len*reararm_len - forearm_len*forearm_len) / (2 * diag * reararm_len));
+    double rise_ang = atan2(z_2, extend_2);
 
-            // Update current joints and pose delta
-            pose_delta = new_pose_delta;
-            joint_current += joint_delta;
+    // Build up joints for shoulder, elbow, wrist, gripper
+    Vector6d calc_joints = Vector6d::Zero();
+    calc_joints(SHOULDER) = rise_ang + forearm_ang - PI/2;
+    calc_joints(ELBOW) = diag_ang - PI/2;
+    calc_joints(WRIST) = rise_ang + forearm_ang + diag_ang - wrist_angle - PI;
+    calc_joints(GRIPPER) = target_pose(GRIPPER);
 
-            j++;
-        }
+    // Calculate yaw angle
+    double zeroed_yaw = atan2(side_offset, extend);
+    double target_yaw = atan2(target_pose.y() - zero_poses[YAW].y(),
+                              target_pose.x() - zero_poses[YAW].x());
+    calc_joints(YAW) = target_yaw - zeroed_yaw;
 
-        // if (j == 30) {
-        //     cout << "failed to converge" << endl;
-        //     cout << "Guess:\n" << joint_guess << endl;
-        //     cout << "Current:\n" << joint_current << endl;
-        //     cout << "Jacobian:\n" << fkin.jacobian << endl;
-        //     cout << "Inverse:\n" << fkin.jacobian.transpose() << endl;
-        //     exit(1);
-        // }
-    }
+    // Calculate twist angle
+    calc_joints(TWIST) = -target_pose(4) + (target_yaw - zeroed_yaw) * cos(target_pose(3));
 
-    return joint_current;
+    return calc_joints;
 }
 
 sensor_msgs::JointState Kinematics::jointsToJS(Vector6d joint_pos, Vector6d joint_vel) {

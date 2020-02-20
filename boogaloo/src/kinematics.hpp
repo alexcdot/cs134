@@ -42,24 +42,26 @@ class Kinematics {
     private:
     ArmProperties ARM_PROP = {
         {
-            vec(0, 0.1, 0),
+            vec(0, -0.1, 0.1),
             vec(0, 0, 0.1),
             vec(-0.6, 0, 0),
             vec(0, 0.3, 0),
             vec(0.15, 0, 0.1),
-            vec(0.0, 0.0, 0.1)
+            vec(0, 0, 0.1)
         },
-        {Rz(0), Ry(PI/2), Rz(0), Rz(0), Ry(PI/2), Rz(0)},
+        {Rz(0), Rx(PI/2) * Rz(-PI/2), Rz(0), Rx(PI), Ry(PI/2), Rz(PI)},
         {0, 0, 0, 0, 0, 0},
         {1, 1, 2, 3, 1, 0.5}
     };
     
     static const std::string JOINT_NAMES[];
+    static const double ERR;
+    FKinResult zero_pos_;
 
     public:
     Kinematics();
     FKinResult runForwardKinematics(Vector6d joint_vals);
-    Vector6d runInverseKinematics(Vector6d target_pose, Vector6d guess);
+    Vector6d runInverseKinematics(Vector6d target_pose);
     sensor_msgs::JointState jointsToJS(Vector6d joint_pos, Vector6d joint_vel);
     Joints jsToJoints(sensor_msgs::JointState joints);
     sensor_msgs::JointState toHebi(sensor_msgs::JointState normal_joints);

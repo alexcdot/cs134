@@ -16,7 +16,7 @@
   <joint name="connect-world-motor0base" type="fixed">
     <parent link="world"/>
     <child  link="motor0base"/>
-    <origin xyz="0 0.1 0" rpy="0 0 0"/>
+    <origin xyz="0 -0.1 .1" rpy="0 0 0"/>
   </joint>
 
   <link name="motor0base"/>
@@ -34,7 +34,7 @@
   <joint name="connect-motor0output-motor1base" type="fixed">
     <parent link="motor0output"/>
     <child  link="motor1base"/>
-    <origin xyz="0 0 0.081" rpy="0 1.57 0"/>
+    <origin xyz="0 0 0.1" rpy="1.57 1.57 0"/>
   </joint>
 
   <link name="motor1base"/>
@@ -65,12 +65,11 @@
 
   <link name="motor2output"> </link>
 
-  <!-- WRIST MOTOR -->
 
   <joint name="connect-motor2output-motor3base" type="fixed">
     <parent link="motor2output"/>
     <child  link="motor3base"/>
-    <origin xyz="0 -0.3 0" rpy="0 0 0"/>
+    <origin xyz="0 0.3 0" rpy="3.14 0 0"/>
   </joint>
 
   <link name="motor3base"/>
@@ -83,7 +82,6 @@
 
   <link name="motor3output"> </link>
 
-  <!-- TWIST MOTOR -->
 
   <joint name="connect-motor3output-motor4base" type="fixed">
     <parent link="motor3output"/>
@@ -101,12 +99,11 @@
 
   <link name="motor4output"> </link>
 
-  <!-- TIP -->
 
   <joint name="connect-motor4output-tip" type="fixed">
     <parent link="motor4output"/>
     <child  link="tip"/>
-    <origin xyz="0 0 0.1" rpy="0 0 0"/>
+    <origin xyz="0 0 0.1" rpy="0 0 3.14"/>
   </joint>
 
   <link name="tip"/>

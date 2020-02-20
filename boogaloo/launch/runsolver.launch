@@ -1,8 +1,8 @@
 <launch>
   <!-- Define general parameters.  These can be overwritten by the
        roslaunch command line. -->
-  <arg name="model" default="$(find hw5code)/urdf/robot_approx.urdf"/>
-  <arg name="cfg"   default="$(find hw5code)/rviz/viewrobot.rviz" />
+  <arg name="model" default="$(find boogaloo)/urdf/robot_approx.urdf"/>
+  <arg name="cfg"   default="$(find boogaloo)/rviz/viewrobot.rviz" />
 
 
   <!-- Load the URDF file into the robot_description parameter. -->

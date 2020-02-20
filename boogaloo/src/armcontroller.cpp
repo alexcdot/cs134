@@ -61,8 +61,8 @@ ArmController::ArmController() {
     current_state_ = ArmControllerState::MOVING_JOINT;
     this->setSplines(current_joint_pos_, current_joint_pos_, current_joint_vel_, ros::Time::now());
 
-    point_pub_ = nh_.advertise<geometry_msgs::PointStamped>("/tip_point", 10);
-    pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/tip_pose", 10);
+    point_pub_ = nh_.advertise<geometry_msgs::PointStamped>("/tippoint", 10);
+    pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/tippose", 10);
     joint_command_pub_ = nh_.advertise<sensor_msgs::JointState>(
         "/hebiros/robot/command/joint_state", 10
     );
@@ -90,7 +90,7 @@ void ArmController::runController(const ros::TimerEvent& time) {
         PosVelPair tip = this->getSplinePoints(t);
 
         // Get joints using ikin
-        Vector6d target_joint = kinematics_.runInverseKinematics(tip.pos, current_joint_pos_);
+        Vector6d target_joint = kinematics_.runInverseKinematics(tip.pos);
 
         // Get joint vel using fkin jacobian
         FKinResult fkin = kinematics_.runForwardKinematics(target_joint);
@@ -104,6 +104,22 @@ void ArmController::runController(const ros::TimerEvent& time) {
         current_joint_vel_ = target_joint_vel;
         current_pose_pos_ = tip.pos;
         current_pose_vel_ = tip.vel;
+        geometry_msgs::PointStamped point;
+        point.header.frame_id = "world";
+        point.point.x = fkin.pose(0);
+        point.point.y = fkin.pose(1);
+        point.point.z = fkin.pose(2);
+        point_pub_.publish(point);
+        geometry_msgs::PoseStamped pose;
+        pose.header.frame_id = "world";
+        pose.pose.position.x = fkin.pose(0);
+        pose.pose.position.y = fkin.pose(1);
+        pose.pose.position.z = fkin.pose(2);
+        pose.pose.orientation.x = fkin.orientation.x();
+        pose.pose.orientation.y = fkin.orientation.y();
+        pose.pose.orientation.z = fkin.orientation.z();
+        pose.pose.orientation.w = fkin.orientation.w();
+        pose_pub_.publish(pose);
     }
     else if (current_state_ == ArmControllerState::MOVING_JOINT) {
         // Get joint pos/vel
@@ -123,7 +139,26 @@ void ArmController::runController(const ros::TimerEvent& time) {
 
         // cout << current_joint_pos_ << endl << endl;
         // cout << current_joint_vel_ << endl;
+        geometry_msgs::PointStamped point;
+        point.header.frame_id = "world";
+        point.point.x = fkin.pose(0);
+        point.point.y = fkin.pose(1);
+        point.point.z = fkin.pose(2);
+        point_pub_.publish(point);
+
+        geometry_msgs::PoseStamped pose;
+        pose.header.frame_id = "world";
+        pose.pose.position.x = fkin.pose(0);
+        pose.pose.position.y = fkin.pose(1);
+        pose.pose.position.z = fkin.pose(2);
+        pose.pose.orientation.x = fkin.orientation.x();
+        pose.pose.orientation.y = fkin.orientation.y();
+        pose.pose.orientation.z = fkin.orientation.z();
+        pose.pose.orientation.w = fkin.orientation.w();
+        pose_pub_.publish(pose);
     }
+
+
 
     joint_state_pub_.publish(joint_state);
     joint_command_pub_.publish(kinematics_.toHebi(joint_state));
@@ -158,7 +193,7 @@ void ArmController::processPoseCommand(const boogaloo::PoseCommand::ConstPtr& ms
     } 
     else {
         current_state_ = ArmControllerState::MOVING_JOINT;
-        Vector6d joint_command = kinematics_.runInverseKinematics(pose_command, current_joint_pos_);
+        Vector6d joint_command = kinematics_.runInverseKinematics(pose_command);
         this->setSplines(joint_command, current_joint_pos_, current_joint_vel_, curr_time);
     }
 }
