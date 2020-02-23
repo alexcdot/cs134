@@ -13,7 +13,8 @@
 
 enum class ArmControllerState {
     MOVING_JOINT,
-    MOVING_POINT
+    MOVING_POINT,
+    FLOATING
 };
 
 struct PosVelPair {
@@ -28,6 +29,8 @@ class ArmController {
     Vector6d current_joint_vel_;
     Vector6d current_pose_pos_;
     Vector6d current_pose_vel_;
+    Vector6d feedback_joint_pos_;
+    Vector6d feedback_joint_vel_;
     SplineManager spline_managers_[6];
     Kinematics kinematics_;
 
@@ -36,6 +39,7 @@ class ArmController {
     ros::Subscriber arm_state_sub_;
     ros::Subscriber tip_goal_sub_;
     ros::Subscriber joint_goal_sub_;
+    ros::Subscriber feedback_sub_;
     
     ros::Publisher point_pub_;
     ros::Publisher pose_pub_;
@@ -45,12 +49,15 @@ class ArmController {
 
     ros::Timer run_timer_;
 
+    ros::Time start_time_;
+
     public:
 
     ArmController();
 
     void processJointCommand(const boogaloo::JointCommand::ConstPtr& msg);
     void processPoseCommand(const boogaloo::PoseCommand::ConstPtr& msg);
+    void processFeedback(const sensor_msgs::JointState::ConstPtr& msg);
 
     void runController(const ros::TimerEvent& time);
 

@@ -174,13 +174,28 @@ Vector6d Kinematics::runInverseKinematics(Vector6d target_pose) {
     return calc_joints;
 }
 
-sensor_msgs::JointState Kinematics::jointsToJS(Vector6d joint_pos, Vector6d joint_vel) {
+Vector6d Kinematics::getFloatingJointTorques(Vector6d joint_vals) {
+    Vector6d torques = Vector6d::Zero();
+    torques(WRIST) = ARM_PROP.grav_mag[WRIST] *
+        sin(joint_vals(SHOULDER) + joint_vals(ELBOW) - joint_vals(WRIST) - PI + ARM_PROP.grav_off[WRIST]);
+    torques(ELBOW) = -torques(WRIST) + ARM_PROP.grav_mag[ELBOW] *
+        sin(joint_vals(SHOULDER) + joint_vals(ELBOW) - (PI/2) + ARM_PROP.grav_off[ELBOW]);
+    torques(SHOULDER) = torques(ELBOW) + ARM_PROP.grav_mag[SHOULDER] *
+        sin(joint_vals(SHOULDER) + ARM_PROP.grav_off[SHOULDER]);
+
+    cout << "wrist " << joint_vals(SHOULDER) + joint_vals(ELBOW) - joint_vals(WRIST) - PI <<
+     " elbow " << joint_vals(SHOULDER) + joint_vals(ELBOW) - (PI/2) <<
+     " shoulder " << joint_vals(SHOULDER);
+    return torques;
+}
+
+sensor_msgs::JointState Kinematics::jointsToJS(Vector6d joint_pos, Vector6d joint_vel, Vector6d joint_torque) {
     sensor_msgs::JointState msg;
     for (int i = 0; i < 6; i++) {
         msg.name.push_back(JOINT_NAMES[i]);
         msg.position.push_back(joint_pos(i));
-        msg.velocity.push_back(joint_pos(i));
-        msg.effort.push_back(0);
+        msg.velocity.push_back(joint_vel(i));
+        msg.effort.push_back(joint_torque(i));
     }
     msg.header.frame_id = "world";
     return msg;
@@ -191,7 +206,7 @@ Joints Kinematics::jsToJoints(sensor_msgs::JointState joints) {
     for (int i = 0; i < 6; i++) {
         ret.pos(i) = joints.position[i];
         ret.vel(i) = joints.velocity[i];
-        ret.torque(i) = 0;
+        ret.torque(i) = joints.effort[i];
     }
     return ret;
 }
@@ -200,10 +215,13 @@ sensor_msgs::JointState Kinematics::toHebi(sensor_msgs::JointState normal_joints
     sensor_msgs::JointState hebi_joints;
     for (int i = 0; i < 6; i++) {
         hebi_joints.name.push_back(normal_joints.name[i]);
-        hebi_joints.position.push_back(ARM_PROP.zeroes[i] +
-            normal_joints.position[i] / ARM_PROP.gearings[i]);
-        hebi_joints.velocity.push_back(normal_joints.velocity[i] / ARM_PROP.gearings[i]);
-        hebi_joints.effort.push_back(normal_joints.effort[i] * ARM_PROP.gearings[i]);
+        if (!normal_joints.position.empty())
+            hebi_joints.position.push_back(ARM_PROP.zeroes[i] +
+                normal_joints.position[i] / ARM_PROP.gearings[i]);
+        if (!normal_joints.velocity.empty())
+            hebi_joints.velocity.push_back(normal_joints.velocity[i] / ARM_PROP.gearings[i]);
+        if (!normal_joints.effort.empty())
+            hebi_joints.effort.push_back(normal_joints.effort[i] * ARM_PROP.gearings[i]);
     }
     hebi_joints.header = normal_joints.header;
     return hebi_joints;
@@ -213,10 +231,13 @@ sensor_msgs::JointState Kinematics::fromHebi(sensor_msgs::JointState hebi_joints
     sensor_msgs::JointState normal_joints;
     for (int i = 0; i < 6; i++) {
         normal_joints.name.push_back(hebi_joints.name[i]);
-        normal_joints.position.push_back(-ARM_PROP.zeroes[i] +
-            hebi_joints.position[i] * ARM_PROP.gearings[i]);
-        normal_joints.velocity.push_back(hebi_joints.velocity[i] * ARM_PROP.gearings[i]);
-        normal_joints.effort.push_back(hebi_joints.effort[i] / ARM_PROP.gearings[i]);
+        if (!hebi_joints.position.empty())
+            normal_joints.position.push_back(-ARM_PROP.zeroes[i] +
+                hebi_joints.position[i] * ARM_PROP.gearings[i]);
+        if (!hebi_joints.velocity.empty())
+            normal_joints.velocity.push_back(hebi_joints.velocity[i] * ARM_PROP.gearings[i]);
+        if (!hebi_joints.effort.empty())
+            normal_joints.effort.push_back(hebi_joints.effort[i] / ARM_PROP.gearings[i]);
     }
     normal_joints.header = hebi_joints.header;
     return normal_joints;

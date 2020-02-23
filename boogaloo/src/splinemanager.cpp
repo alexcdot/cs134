@@ -7,7 +7,7 @@ SplineManager::SplineManager() {
 void SplineManager::setSpline(double goal_pos, double start_pos, double start_vel, ros::Time t_start) {
     // double avg_speed = 1.5;
     // double min_time = 1.0;
-    double t_move = 3;//max(min_time, abs(goal_pos - start_pos) / avg_speed);
+    double t_move = 5;//max(min_time, abs(goal_pos - start_pos) / avg_speed);
 
     t0_ = t_start;
     tf_ = t_start + ros::Duration(t_move);

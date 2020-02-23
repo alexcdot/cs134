@@ -11,17 +11,16 @@
 
   <link name="world"/>
 
-  <!-- YAW MOTOR -->
 
   <joint name="connect-world-motor0base" type="fixed">
     <parent link="world"/>
     <child  link="motor0base"/>
-    <origin xyz="0 -0.124 0.081" rpy="0 0 0"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
   <link name="motor0base"/>
 
-  <joint name="Boogaloo/yaw" type="continuous">
+  <joint name="Dwarfs/Doc" type="continuous">
     <parent link="motor0base"/>
     <child  link="motor0output"/>
     <axis   xyz="0 0 1"/>
@@ -29,35 +28,33 @@
 
   <link name="motor0output"> </link>
 
-  <!-- SHOULDER MOTOR -->
 
   <joint name="connect-motor0output-motor1base" type="fixed">
     <parent link="motor0output"/>
     <child  link="motor1base"/>
-    <origin xyz="0 -0.051 0.051" rpy="1.57 1.57 0"/>
+    <origin xyz="0 0.05 0.081" rpy="1.57 0 0"/>
   </joint>
 
   <link name="motor1base"/>
 
-  <joint name="Boogaloo/shoulder" type="continuous">
+  <joint name="Dwarfs/Sleepy" type="continuous">
     <parent link="motor1base"/>
     <child  link="motor1output"/>
-    <axis   xyz="0 0 1"/>
+    <axis   xyz="0 0 -1"/>
   </joint>
 
   <link name="motor1output"> </link>
 
-  <!-- ELBOW MOTOR -->
 
   <joint name="connect-motor1output-motor2base" type="fixed">
     <parent link="motor1output"/>
     <child  link="motor2base"/>
-    <origin xyz="-0.606 0 -0.064" rpy="0 0 0"/>
+    <origin xyz="0.5 0 0.036" rpy="0 0 0"/>
   </joint>
 
   <link name="motor2base"/>
 
-  <joint name="Boogaloo/elbow" type="continuous">
+  <joint name="Dwarfs/Grumpy" type="continuous">
     <parent link="motor2base"/>
     <child  link="motor2output"/>
     <axis   xyz="0 0 1"/>
@@ -66,44 +63,10 @@
   <link name="motor2output"> </link>
 
 
-  <joint name="connect-motor2output-motor3base" type="fixed">
+  <joint name="connect-motor2output-tip" type="fixed">
     <parent link="motor2output"/>
-    <child  link="motor3base"/>
-    <origin xyz="0 0.298 0" rpy="3.14 0 0"/>
-  </joint>
-
-  <link name="motor3base"/>
-
-  <joint name="Boogaloo/wrist" type="continuous">
-    <parent link="motor3base"/>
-    <child  link="motor3output"/>
-    <axis   xyz="0 0 1"/>
-  </joint>
-
-  <link name="motor3output"> </link>
-
-
-  <joint name="connect-motor3output-motor4base" type="fixed">
-    <parent link="motor3output"/>
-    <child  link="motor4base"/>
-    <origin xyz="0.038 0 0.110" rpy="0 1.57 0"/>
-  </joint>
-
-    <link name="motor4base"/>
-
-  <joint name="Boogaloo/twist" type="continuous">
-    <parent link="motor4base"/>
-    <child  link="motor4output"/>
-    <axis   xyz="0 0 1"/>
-  </joint>
-
-  <link name="motor4output"> </link>
-
-
-  <joint name="connect-motor4output-tip" type="fixed">
-    <parent link="motor4output"/>
     <child  link="tip"/>
-    <origin xyz="0 0 0.056" rpy="0 0 3.14"/>
+    <origin xyz="0.5 0 0.0335" rpy="0 1.57 0"/>
   </joint>
 
   <link name="tip"/>
@@ -134,7 +97,7 @@
 
   <!-- ********************** Table ********************** -->
 
-  <!-- <joint name="connect-world-table" type="fixed">
+  <joint name="connect-world-table" type="fixed">
     <parent link="world"/>
     <child  link="table"/>
   </joint>
@@ -147,12 +110,12 @@
       </geometry>
       <material name="table"/>
     </visual>
-  </link> -->
+  </link>
 
 
   <!-- ********************** Motors ********************* -->
 
-  <!-- <joint name="attach-motor0" type="fixed">
+  <joint name="attach-motor0" type="fixed">
     <parent link="motor0base"/>
     <child  link="motor0"/>
   </joint>
@@ -192,13 +155,13 @@
       </geometry>
       <material name="hebired"/>
     </visual>
-  </link> -->
+  </link>
 
 
   <!-- **************** Motor 0 - Motor 1 **************** -->
   <!-- Motor Thickness (0, 0, 0.031) + Shift (0, 0.05, 0.05) -->
 
-  <!-- <joint name="connect-motor0output-link1part1" type="fixed">
+  <joint name="connect-motor0output-link1part1" type="fixed">
     <parent link="motor0output"/>
     <child  link="link1part1"/>
   </joint>
@@ -226,13 +189,13 @@
       </geometry>
       <material name="white"/>
     </visual>
-  </link> -->
+  </link>
 
 
   <!-- **************** Motor 1 - Motor 2 **************** -->
   <!-- Motor Thickness (0, 0, 0.031) + Shift (0.5, 0, 0.005) -->
 
-  <!-- <joint name="connect-motor1output-link2" type="fixed">
+  <joint name="connect-motor1output-link2" type="fixed">
     <parent link="motor1output"/>
     <child  link="link2"/>
   </joint>
@@ -245,13 +208,13 @@
       </geometry>
       <material name="white"/>
     </visual>
-  </link> -->
+  </link>
 
 
   <!-- ****************** Motor 2 - Tip ****************** -->
   <!-- Motor Thickness (0, 0, 0.031) + Shift (0.5, 0, 0.0025) -->
 
-  <!-- <joint name="connect-motor2output-link3" type="fixed">
+  <joint name="connect-motor2output-link3" type="fixed">
     <parent link="motor2output"/>
     <child  link="link3"/>
   </joint>
@@ -264,7 +227,7 @@
       </geometry>
       <material name="white"/>
     </visual>
-  </link> -->
+  </link>
 
 
   <!-- ********************* Gripper ********************* -->

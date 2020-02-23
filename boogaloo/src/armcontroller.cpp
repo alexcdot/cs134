@@ -32,33 +32,27 @@ int main(int argc, char **argv) {
 ArmController::ArmController() {
     kinematics_ = Kinematics();
 
-    // TODO uncomment when hooked up to actual hebi node
+    start_time_ = ros::Time::now();
 
-    // // Get initial position
-    // sensor_msgs::JointState::ConstPtr msgptr;
-    // msgptr = ros::topic::waitForMessage<sensor_msgs::JointState>(
-    //     "/hebiros/robot/feedback/joint_state", nh_
-    // );
-    // if (msgptr == NULL) {
-    //     ROS_ERROR("Failed to receive topic /hebiros/robot/feedback/joint_state");
-    //     exit(1);
-    // }
+    // Get initial position
+    sensor_msgs::JointState::ConstPtr msgptr;
+    msgptr = ros::topic::waitForMessage<sensor_msgs::JointState>(
+        "/hebiros/robot/feedback/joint_state", nh_
+    );
+    if (msgptr == NULL) {
+        ROS_ERROR("Failed to receive topic /hebiros/robot/feedback/joint_state");
+        exit(1);
+    }
+    this->processFeedback(msgptr);
 
-    // // Convert to joints and get pose using kinematics
-    // Joints initial_joints = kinematics_.jsToJoints(kinematics_.fromHebi(*msgptr));
-    Joints initial_joints;
-    initial_joints.pos << 0,0,0,0,0,0;
-    initial_joints.vel << 0.1,0,0,0,0,0;
-    initial_joints.torque << 0,0,0,0,0,0;
-
-    FKinResult initial_pose = kinematics_.runForwardKinematics(initial_joints.pos);
+    FKinResult initial_pose = kinematics_.runForwardKinematics(feedback_joint_pos_);
     
-    current_joint_pos_ = initial_joints.pos;
-    current_joint_vel_ = Vector6d::Zero();
+    current_joint_pos_ = feedback_joint_pos_;
+    current_joint_vel_ = feedback_joint_vel_;
     current_pose_pos_ = initial_pose.pose;
-    current_pose_vel_ = Vector6d::Zero();
+    current_pose_vel_ = initial_pose.jacobian * feedback_joint_vel_;
 
-    current_state_ = ArmControllerState::MOVING_JOINT;
+    current_state_ = ArmControllerState::FLOATING;
     this->setSplines(current_joint_pos_, current_joint_pos_, current_joint_vel_, ros::Time::now());
 
     point_pub_ = nh_.advertise<geometry_msgs::PointStamped>("/tippoint", 10);
@@ -73,6 +67,7 @@ ArmController::ArmController() {
     // Goal subscribers
     tip_goal_sub_ = nh_.subscribe("/joint_goal", 10, &ArmController::processJointCommand, this);
     joint_goal_sub_ = nh_.subscribe("/tip_goal", 10, &ArmController::processPoseCommand, this);
+    feedback_sub_ = nh_.subscribe("/hebiros/robot/feedback/joint_state", 10, &ArmController::processFeedback, this);
 
     run_timer_ = nh_.createTimer(ros::Duration(0.01), &ArmController::runController, this);
     run_timer_.start();
@@ -95,9 +90,10 @@ void ArmController::runController(const ros::TimerEvent& time) {
         // Get joint vel using fkin jacobian
         FKinResult fkin = kinematics_.runForwardKinematics(target_joint);
         Vector6d target_joint_vel = fkin.jacobian.inverse() * tip.vel;
+        Vector6d target_joint_torques = kinematics_.getFloatingJointTorques(target_joint);
 
         // Put joint targets in joint state
-        joint_state = kinematics_.jointsToJS(target_joint, target_joint_vel);
+        joint_state = kinematics_.jointsToJS(target_joint, target_joint_vel, target_joint_torques);
 
         // Update current values
         current_joint_pos_ = target_joint;
@@ -124,9 +120,10 @@ void ArmController::runController(const ros::TimerEvent& time) {
     else if (current_state_ == ArmControllerState::MOVING_JOINT) {
         // Get joint pos/vel
         PosVelPair joints = this->getSplinePoints(t);
+        Vector6d joint_torques = kinematics_.getFloatingJointTorques(joints.pos);
 
         // Put joint targets in joint state
-        joint_state = kinematics_.jointsToJS(joints.pos, joints.vel);
+        joint_state = kinematics_.jointsToJS(joints.pos, joints.vel, joint_torques);
 
         // Run fkin to get jacobian for later
         FKinResult fkin = kinematics_.runForwardKinematics(joints.pos);
@@ -157,8 +154,43 @@ void ArmController::runController(const ros::TimerEvent& time) {
         pose.pose.orientation.w = fkin.orientation.w();
         pose_pub_.publish(pose);
     }
+    else if (current_state_ == ArmControllerState::FLOATING) {
 
+        Vector6d joint_torques = kinematics_.getFloatingJointTorques(feedback_joint_pos_);
+        double percent = min(1.0, (ros::Time::now() - start_time_).toSec() / 5);
+        joint_torques = joint_torques * percent;
 
+        // Put joint targets in joint state
+        joint_state = kinematics_.jointsToJS(feedback_joint_pos_, Vector6d::Zero(), joint_torques);
+        // joint_state.position.clear();
+        // joint_state.velocity.clear();
+
+        FKinResult fkin = kinematics_.runForwardKinematics(feedback_joint_pos_);
+        current_joint_pos_ = feedback_joint_pos_;
+        current_joint_vel_ = feedback_joint_vel_;
+        current_pose_pos_ = fkin.pose;
+        current_pose_vel_ = fkin.jacobian * feedback_joint_vel_;
+
+        geometry_msgs::PointStamped point;
+        point.header.frame_id = "world";
+        point.point.x = fkin.pose(0);
+        point.point.y = fkin.pose(1);
+        point.point.z = fkin.pose(2);
+        point_pub_.publish(point);
+
+        geometry_msgs::PoseStamped pose;
+        pose.header.frame_id = "world";
+        pose.pose.position.x = fkin.pose(0);
+        pose.pose.position.y = fkin.pose(1);
+        pose.pose.position.z = fkin.pose(2);
+        pose.pose.orientation.x = fkin.orientation.x();
+        pose.pose.orientation.y = fkin.orientation.y();
+        pose.pose.orientation.z = fkin.orientation.z();
+        pose.pose.orientation.w = fkin.orientation.w();
+        pose_pub_.publish(pose);
+    }
+
+    cout << kinematics_.toHebi(joint_state) << endl;
 
     joint_state_pub_.publish(joint_state);
     joint_command_pub_.publish(kinematics_.toHebi(joint_state));
@@ -198,44 +230,12 @@ void ArmController::processPoseCommand(const boogaloo::PoseCommand::ConstPtr& ms
     }
 }
 
-
-// void ArmController::processJointState(const sensor_msgs::JointState::ConstPtr& msg) {
-//     Vector6d joints = Vector6d::Zero();
-//     for (int i = 0; i < 6; i++) {
-//         joints(i) = msg->position[i];
-//     }
-//     joints(5) = 0;
-//     FKinResult res = kinematics_.runForwardKinematics(joints);
-
-//     // Create point message
-//     geometry_msgs::PointStamped point;
-//     point.header.frame_id = "world";
-//     point.point.x = res.pose(0);
-//     point.point.y = res.pose(1);
-//     point.point.z = res.pose(2);
-//     point_pub_.publish(point);
-
-//     // Create pose message
-//     geometry_msgs::PoseStamped pose;
-//     pose.header.frame_id = "world";
-//     pose.pose.position.x = res.pose(0);
-//     pose.pose.position.y = res.pose(1);
-//     pose.pose.position.z = res.pose(2);
-//     pose.pose.orientation.x = res.orientation.x();
-//     pose.pose.orientation.y = res.orientation.y();
-//     pose.pose.orientation.z = res.orientation.z();
-//     pose.pose.orientation.w = res.orientation.w();
-//     pose_pub_.publish(pose);
-    
-//     Vector6d guess;
-//     guess << -1.57, 0, 0, 0, 0, 0;
-
-//     Vector6d rebuilt = kinematics_.runInverseKinematics(res.pose, guess);
-    
-//     cout << endl << res.jacobian << endl << endl;
-
-//     cout << "----" << endl;
-// }
+void ArmController::processFeedback(const sensor_msgs::JointState::ConstPtr& msg) {
+    sensor_msgs::JointState real_state = kinematics_.fromHebi(*msg);
+    Joints joints = kinematics_.jsToJoints(real_state);
+    feedback_joint_pos_ = joints.pos;
+    feedback_joint_vel_ = joints.vel;
+}
 
 void ArmController::setSplines(Vector6d goal_pos, Vector6d start_pos, Vector6d start_vel, ros::Time t_start) {
     for (int i = 0; i < 6; i++) {
