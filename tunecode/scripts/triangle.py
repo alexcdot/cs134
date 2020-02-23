@@ -14,8 +14,6 @@ from gravity    import *
 #
 #   Robot Definition
 #
-family = 'Dwarfs'
-names  = ['Doc', 'Sleepy', 'Grumpy']
 
 fullnames = [family+'/'+name for name in names]
 
@@ -29,9 +27,7 @@ if __name__ == "__main__":
 
     # Do some ping-ing.  For some teams (going through the switch?)
     # actuators aren't visible with a ping?  These are my addresses.
-    ping('10.10.10.90')
-    ping('10.10.10.91')
-    ping('10.10.10.92')
+    ping_all()
 
     # Assert the HEBI node is running.
     hebi_assert_node()
@@ -70,7 +66,16 @@ if __name__ == "__main__":
     blocking_rampeffort(pub, cmdmsg, gravity(cmdmsg.position))
 
     # Then move from the current (initial) to the nominal.
-    blocking_moveto(pub, cmdmsg, [0.4, -0*math.pi/2, 0*math.pi/2], gravity)
+    # # elbow least inertia
+    # blocking_moveto(pub, cmdmsg, [1.9, -1.84, 0.154 , 0, 0, 0], gravity)
+    # # elbow most inertia
+    #blocking_moveto(pub, cmdmsg, [1.9, -1.84, 1.2 , 0, -1.57, -1], gravity)
+    # Shoulder most inertia
+    blocking_moveto(pub, cmdmsg, [3.18, -1.5, 0.75 , -0.467, -1.57, -1.5], gravity)
+
+    # Shoulder least inertia
+    #blocking_moveto(pub, cmdmsg, [2.18, 0, 0.7 , 0, 0, 0], gravity)
+
 
     # Finally (continually) output the triangle wave.
-    blocking_trianglewave(pub, cmdmsg, 1, 0.1, 2.0, gravity)
+    blocking_trianglewave(pub, cmdmsg, 1, 0.3, 2.0, gravity)

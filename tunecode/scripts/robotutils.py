@@ -61,6 +61,15 @@ from sensor_msgs.msg import JointState
 #
 ######################################################################
 
+family = 'Boogaloo'
+names  = ['yaw', 'shoulder', 'elbow', 'wrist', 'twist', 'gripper']
+ips = ['10.10.10.126', '10.10.10.127', '10.10.10.125',
+       '10.10.10.122', '10.10.10.123', '10.10.10.121']
+motor_types = ['X8-9', 'X8-16', 'X8-9',
+               'X5-4', 'X5-4', 'X5-4']
+
+name_to_ind = {name: i for i, name in enumerate(names)}
+
 #
 #   Ping - check a particular IP address ios visible via ping.
 #
@@ -74,6 +83,11 @@ def ping(ipaddr):
     else:
         print("not reachable")
     return visible
+
+
+def ping_all():
+    for ip in ips:
+        ping(ip)
 
 
 ######################################################################
@@ -479,6 +493,25 @@ def blocking_trianglewave(pub, cmdmsg, joint, amplitude, period, gravity=None):
     center = cmdmsg.position[joint]
     speed  = 4.0 * amplitude / period
 
+    from std_msgs.msg import Float32
+    pos_pub = rospy.Publisher('/trianglewave_pos',
+                          Float32, queue_size=10)
+    vel_pub = rospy.Publisher('/trianglewave_vel',
+                          Float32, queue_size=10)
+    eff_pub = rospy.Publisher('/trianglewave_eff',
+                          Float32, queue_size=10)
+
+    def graph_feedback(msg):
+        pos_pub.publish(msg.position[joint])
+        vel_pub.publish(msg.velocity[joint])
+        eff_pub.publish(msg.effort[joint])
+
+
+    # Create a subscriber to listen to joint_states.
+    rospy.Subscriber('/hebiros/robot/feedback/joint_state',
+                        JointState, graph_feedback)
+
+
     # Use a 100Hz servo to send the commands.
     servo     = rospy.Rate(100)
     starttime = rospy.Time.now()
@@ -502,7 +535,6 @@ def blocking_trianglewave(pub, cmdmsg, joint, amplitude, period, gravity=None):
         if callable(gravity):
             cmdmsg.effort = gravity(cmdmsg.position);
         pub.publish(cmdmsg)
-
         # Shift the (period's) start time after a full period
         if (t >= period):
             starttime = starttime + rospy.Duration.from_sec(period)

@@ -41,8 +41,6 @@ from tunecode.srv    import TuneCfg, TuneCfgResponse
 #
 #   Robot Definition
 #
-family = 'Dwarfs'
-names  = ['Doc', 'Sleepy', 'Grumpy']
 
 dofs      = len(names)
 fullnames = [family+'/'+name for name in names]

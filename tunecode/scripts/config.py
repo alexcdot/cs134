@@ -12,8 +12,6 @@ from robotutils import *
 #
 #   Robot Definition
 #
-family = 'Dwarfs'
-names  = ['Doc', 'Sleepy', 'Grumpy']
 
 fullnames = [family+'/'+name for name in names]
 
@@ -27,9 +25,7 @@ if __name__ == "__main__":
 
     # Do some ping-ing.  For some teams (going through the switch?)
     # actuators aren't visible with a ping?  These are my addresses.
-    ping('10.10.10.90')
-    ping('10.10.10.91')
-    ping('10.10.10.92')
+    ping_all()
 
     # Assert the HEBI node is running.
     hebi_assert_node()
@@ -51,13 +47,23 @@ if __name__ == "__main__":
     #hebi_set_gains(fullnames[0], 10, 0.05, 1200.0)
     #hebi_set_gains(fullnames[1], 10, 0.05, 1200.0)
     #hebi_set_gains(fullnames[2], 10, 0.05, 1200.0)
-    hebi_set_gains(fullnames[0], 10, 0.05, 1200.0)
-    hebi_set_gains(fullnames[1], 60, 0.4,  400.0)
-    hebi_set_gains(fullnames[2], 10, 0.05, 1200.0)
+    #hebi_set_gains(fullnames[0], 10, 0.05, 1200.0)
+    #hebi_set_gains(fullnames[1], 60, 0.4,  400.0)
+
+    # gains for float
+    hebi_set_gains(fullnames[1], 40, 0.1, 1200.0)
+    hebi_set_gains(fullnames[2], 20, 0.1, 1200.0)
+    hebi_set_gains(fullnames[5], 30, 0.05, 1200.0)
+
+
+    # gains for full shoulder test
+    # hebi_set_gains(fullnames[1], 40, 0.1, 1200.0)
+    # hebi_set_gains(fullnames[2], 20, 0.7, 1200.0)
+    # hebi_set_gains(fullnames[5], 30, 0.05, 1200.0)
 
     # Potentially adjust the force gains.  Careful.  Defaults:
     # X5-4:  hebi_set_gains('family/name', 0.25, 0.001 , 1636.0)
     # X5-9:  hebi_set_gains('family/name', 0.25, 0.001 , 1636.0)
     # X8-9:  hebi_set_gains('family/name', 0.1 , 0.0001, 1636.0)
     # X8-16: hebi_set_gains('family/name', 0.1 , 0.0001, 1636.0)
-    hebi_set_forcegains(fullnames[1], 0.25, 0.002, 1636)
+    #hebi_set_forcegains(fullnames[1], 0.25, 0.002, 1636)
