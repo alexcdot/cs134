@@ -42,6 +42,7 @@ class ArmController {
     ros::Subscriber tip_goal_sub_;
     ros::Subscriber joint_goal_sub_;
     ros::Subscriber feedback_sub_;
+    ros::Subscriber mass_sub_;
     
     ros::Publisher point_pub_;
     ros::Publisher pose_pub_;
@@ -65,7 +66,8 @@ class ArmController {
 
     void runController(const ros::TimerEvent& time);
 
-    void setSplines(Vector6d goal_pos, Vector6d start_pos, Vector6d start_vel, ros::Time t_start);
+    void setSplinesPose(Vector6d goal_pos, Vector6d start_pos, Vector6d start_vel, ros::Time t_start);
+    void setSplinesJoint(Vector6d goal_pos, Vector6d start_pos, Vector6d start_vel, ros::Time t_start);
     PosVelPair getSplinePoints(ros::Time time);
 };
 

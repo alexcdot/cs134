@@ -18,6 +18,7 @@ add_message_files(
   JointCommand.msg
   PoseCommand.msg
   RobotState.msg
+  MassChange.msg
 )
 
 generate_messages(

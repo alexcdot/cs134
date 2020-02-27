@@ -4,7 +4,7 @@ import sys
 import rospy
 import time
 
-from boogaloo.msg import JointCommand, PoseCommand, RobotState
+from boogaloo.msg import JointCommand, PoseCommand, RobotState, MassChange
 
 curr_state = RobotState()
 
@@ -28,11 +28,16 @@ if __name__ == '__main__':
     rospy.Subscriber("/robot_state", RobotState, robot_state_callback)
     joint_pub = rospy.Publisher('/joint_goal', JointCommand, queue_size=10)
     tip_pub = rospy.Publisher('/tip_goal', PoseCommand, queue_size=10)
+    mass_pub = rospy.Publisher('/mass_updates', MassChange, queue_size=10)
 
     rospy.sleep(rospy.Duration(2))
 
     while curr_state.is_at_target == False and not rospy.is_shutdown():
         rospy.sleep(rospy.Duration(0.1))
+
+    mass = MassChange()
+    mass.mass_status = MassChange.EMPTY
+    mass_pub.publish(mass)
 
     cmd = JointCommand()
     cmd.pose_follow = True
@@ -53,9 +58,12 @@ if __name__ == '__main__':
     cmd.pos.z = -0.02
     pub_and_wait(tip_pub, cmd)
 
-    cmd.gripper = 1.2
+    cmd.gripper = 1
 
     pub_and_wait(tip_pub, cmd)
+
+    mass.mass_status = MassChange.BOTTLE
+    mass_pub.publish(mass)
 
     cmd.pos.z = 0.2
 
@@ -68,6 +76,9 @@ if __name__ == '__main__':
 
     cmd.pos.z = 0.05
     pub_and_wait(tip_pub, cmd)
+
+    mass.mass_status = MassChange.EMPTY
+    mass_pub.publish(mass)
 
     cmd.gripper = 0
     pub_and_wait(tip_pub, cmd)
@@ -82,11 +93,14 @@ if __name__ == '__main__':
     cmd.pos.y = 0.22
     pub_and_wait(tip_pub, cmd)
 
-    cmd.gripper = 1.2
+    cmd.gripper = 1
     pub_and_wait(tip_pub, cmd)
 
+    mass.mass_status = MassChange.BOTTLE
+    mass_pub.publish(mass)
+
     cmd = JointCommand()
-    cmd.gripper = 1.2
+    cmd.gripper = 1
     cmd.pose_follow = True
 
     pub_and_wait(joint_pub, cmd)
