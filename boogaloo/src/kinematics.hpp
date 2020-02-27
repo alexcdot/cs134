@@ -21,8 +21,8 @@ struct ArmProperties {
     vector<Matrix3d> rotations;
     vector<double> zeroes;
     vector<double> gearings;
-    vector<double> grav_mag;
-    vector<double> grav_off;
+    vector<double> grav_sin;
+    vector<double> grav_cos;
 };
 
 struct Joints {
@@ -53,9 +53,9 @@ class Kinematics {
         },
         {Rz(0), Rx(PI/2) * Rz(-PI/2), Rz(0), Rx(PI), Ry(PI/2), Rz(PI)},
         {0, 0, 0, 0, 0, 0},
-        {1, 1, 2, 3, 1, 0.5},
-        {0, -13.566, -5.207 / 2, 0.332 / 3, 0, 0},
-        {0, 12.643, 6.073, -0.369, 0, 0}
+        {1, 1, 2, 3, 1, -1.0},
+        {0, -14.4, -5.16 / 2, 0.12 / 3, 0, 0},
+        {0, -0.5, 0.9 / 2, 0 / 3, 0, 0}
     };
     
     static const std::string JOINT_NAMES[];

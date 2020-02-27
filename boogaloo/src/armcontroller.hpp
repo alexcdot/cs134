@@ -7,6 +7,7 @@
 
 #include "boogaloo/JointCommand.h"
 #include "boogaloo/PoseCommand.h"
+#include "boogaloo/RobotState.h"
 #include "sensor_msgs/JointState.h"
 #include "geometry_msgs/PointStamped.h"
 #include "geometry_msgs/PoseStamped.h"
@@ -25,6 +26,7 @@ struct PosVelPair {
 class ArmController {
     private: 
     ArmControllerState current_state_;
+    boogaloo::RobotState current_robot_state_;
     Vector6d current_joint_pos_;
     Vector6d current_joint_vel_;
     Vector6d current_pose_pos_;
@@ -46,6 +48,8 @@ class ArmController {
 
     ros::Publisher joint_command_pub_;
     ros::Publisher joint_state_pub_;
+
+    ros::Publisher robot_state_pub_;
 
     ros::Timer run_timer_;
 

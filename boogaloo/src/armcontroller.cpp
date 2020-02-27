@@ -32,6 +32,10 @@ int main(int argc, char **argv) {
 ArmController::ArmController() {
     kinematics_ = Kinematics();
 
+    robot_state_pub_ = nh_.advertise<boogaloo::RobotState>(
+        "/robot_state", 10
+    );
+
     start_time_ = ros::Time::now();
 
     // Get initial position
@@ -65,8 +69,8 @@ ArmController::ArmController() {
     );
 
     // Goal subscribers
-    tip_goal_sub_ = nh_.subscribe("/joint_goal", 10, &ArmController::processJointCommand, this);
-    joint_goal_sub_ = nh_.subscribe("/tip_goal", 10, &ArmController::processPoseCommand, this);
+    joint_goal_sub_ = nh_.subscribe("/joint_goal", 10, &ArmController::processJointCommand, this);
+    tip_goal_sub_ = nh_.subscribe("/tip_goal", 10, &ArmController::processPoseCommand, this);
     feedback_sub_ = nh_.subscribe("/hebiros/robot/feedback/joint_state", 10, &ArmController::processFeedback, this);
 
     run_timer_ = nh_.createTimer(ros::Duration(0.01), &ArmController::runController, this);
@@ -155,6 +159,7 @@ void ArmController::runController(const ros::TimerEvent& time) {
         pose_pub_.publish(pose);
     }
     else if (current_state_ == ArmControllerState::FLOATING) {
+        current_robot_state_.is_at_target = true;
 
         Vector6d joint_torques = kinematics_.getFloatingJointTorques(feedback_joint_pos_);
         double percent = min(1.0, (ros::Time::now() - start_time_).toSec() / 5);
@@ -190,13 +195,13 @@ void ArmController::runController(const ros::TimerEvent& time) {
         pose_pub_.publish(pose);
     }
 
-    cout << kinematics_.toHebi(joint_state) << endl;
-
+    // cout << "Error: \n" << feedback_joint_pos_ - current_joint_pos_ << endl;
     joint_state_pub_.publish(joint_state);
     joint_command_pub_.publish(kinematics_.toHebi(joint_state));
 }
 
 void ArmController::processJointCommand(const boogaloo::JointCommand::ConstPtr& msg) {
+    cout << "yee" << endl;
     ros::Time curr_time = ros::Time::now();
     Vector6d joint_command;
     joint_command << msg->yaw, msg->shoulder, msg->elbow,
@@ -235,20 +240,32 @@ void ArmController::processFeedback(const sensor_msgs::JointState::ConstPtr& msg
     Joints joints = kinematics_.jsToJoints(real_state);
     feedback_joint_pos_ = joints.pos;
     feedback_joint_vel_ = joints.vel;
+
+    FKinResult fkin = kinematics_.runForwardKinematics(feedback_joint_pos_);
+    current_robot_state_.pos.x = fkin.pose(0);
+    current_robot_state_.pos.y = fkin.pose(1);
+    current_robot_state_.pos.z = fkin.pose(2);
+    current_robot_state_.wrist_angle = fkin.pose(3);
+    current_robot_state_.wrist_roll = fkin.pose(4);
+    current_robot_state_.gripper = fkin.pose(5);
+    robot_state_pub_.publish(current_robot_state_);
 }
 
 void ArmController::setSplines(Vector6d goal_pos, Vector6d start_pos, Vector6d start_vel, ros::Time t_start) {
     for (int i = 0; i < 6; i++) {
-        spline_managers_[i].setSpline(goal_pos(i), start_pos(i), start_vel(i), t_start);
+        spline_managers_[i].setSpline(start_pos(i), start_vel(i), goal_pos(i), 0.0, t_start, ros::Duration(2));
     }
 }
 
 PosVelPair ArmController::getSplinePoints(ros::Time time) {
     PosVelPair pair;
+    bool at_target = true;
     for (int i = 0; i < 6; i++) {
         SplinePoint point = spline_managers_[i].getPoint(time);
         pair.pos(i) = point.pos;
         pair.vel(i) = point.vel;
+        at_target &= point.at_end;
     }
+    current_robot_state_.is_at_target = at_target;
     return pair;
 }

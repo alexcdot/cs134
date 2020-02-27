@@ -176,16 +176,24 @@ Vector6d Kinematics::runInverseKinematics(Vector6d target_pose) {
 
 Vector6d Kinematics::getFloatingJointTorques(Vector6d joint_vals) {
     Vector6d torques = Vector6d::Zero();
-    torques(WRIST) = ARM_PROP.grav_mag[WRIST] *
-        sin(joint_vals(SHOULDER) + joint_vals(ELBOW) - joint_vals(WRIST) - PI + ARM_PROP.grav_off[WRIST]);
-    torques(ELBOW) = -torques(WRIST) + ARM_PROP.grav_mag[ELBOW] *
-        sin(joint_vals(SHOULDER) + joint_vals(ELBOW) - (PI/2) + ARM_PROP.grav_off[ELBOW]);
-    torques(SHOULDER) = torques(ELBOW) + ARM_PROP.grav_mag[SHOULDER] *
-        sin(joint_vals(SHOULDER) + ARM_PROP.grav_off[SHOULDER]);
+    double wrist_ang = joint_vals(SHOULDER) + joint_vals(ELBOW) - joint_vals(WRIST) - PI;
+    double elbow_ang = joint_vals(SHOULDER) + joint_vals(ELBOW) - (PI/2);
+    double shoulder_ang = joint_vals(SHOULDER);
 
-    cout << "wrist " << joint_vals(SHOULDER) + joint_vals(ELBOW) - joint_vals(WRIST) - PI <<
-     " elbow " << joint_vals(SHOULDER) + joint_vals(ELBOW) - (PI/2) <<
-     " shoulder " << joint_vals(SHOULDER);
+    torques(WRIST) = ARM_PROP.grav_sin[WRIST] * sin(wrist_ang) +
+                     ARM_PROP.grav_cos[WRIST] * cos(wrist_ang);
+
+    torques(ELBOW) = -torques(WRIST) + 
+                     ARM_PROP.grav_sin[ELBOW] * sin(elbow_ang) +
+                     ARM_PROP.grav_cos[ELBOW] * cos(elbow_ang);
+
+    torques(SHOULDER) = torques(ELBOW) + 
+                        ARM_PROP.grav_sin[SHOULDER] * sin(shoulder_ang) +
+                        ARM_PROP.grav_cos[SHOULDER] * cos(shoulder_ang);
+
+    // cout << "wrist " << joint_vals(SHOULDER) + joint_vals(ELBOW) - joint_vals(WRIST) - PI <<
+    //  " elbow " << joint_vals(SHOULDER) + joint_vals(ELBOW) - (PI/2) <<
+    //  " shoulder " << joint_vals(SHOULDER);
     return torques;
 }
 
