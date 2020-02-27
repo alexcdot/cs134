@@ -51,9 +51,12 @@ if __name__ == "__main__":
     #hebi_set_gains(fullnames[1], 60, 0.4,  400.0)
 
     # gains for float
+    hebi_set_gains(fullnames[0], 50, 1, 1200.0)
     hebi_set_gains(fullnames[1], 40, 0.1, 1200.0)
-    hebi_set_gains(fullnames[2], 20, 0.1, 1200.0)
-    hebi_set_gains(fullnames[5], 30, 0.05, 1200.0)
+    hebi_set_gains(fullnames[2], 20, 0.4, 1200.0)
+    hebi_set_gains(fullnames[3], 50, 0.1, 1200.0)
+    hebi_set_gains(fullnames[4], 10, 0.1, 1200.0)
+    hebi_set_gains(fullnames[5], 20, 0.05, 1200.0)
 
 
     # gains for full shoulder test

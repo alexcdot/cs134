@@ -4,33 +4,40 @@ SplineManager::SplineManager() {
     a_ = b_ = c_ = d_ = 0;
 }
 
-void SplineManager::setSpline(double goal_pos, double start_pos, double start_vel, ros::Time t_start) {
-    // double avg_speed = 1.5;
-    // double min_time = 1.0;
-    double t_move = 5;//max(min_time, abs(goal_pos - start_pos) / avg_speed);
-
+void SplineManager::setSpline(double start_pos, double start_vel, double goal_pos, double goal_vel, ros::Time t_start, ros::Duration t_move) {
     t0_ = t_start;
-    tf_ = t_start + ros::Duration(t_move);
+    tf_ = t_start + t_move;
 
-    a_ = start_pos;
-    b_ = start_vel;
-    c_ = -(-3.0 * goal_pos + 3.0 * start_pos + 2.0 * start_vel * t_move) / (t_move*t_move);
-    d_ = -(2.0 * goal_pos - 2.0 * start_pos - start_vel * t_move) / (t_move*t_move*t_move);
+    // Rename vars so I can just copy-paste from mathematica
+    double sp = start_pos;
+    double sv = start_vel;
+    double fp = goal_pos;
+    double fv = goal_vel;
+    double tm = t_move.toSec();
+
+    a_ = sp;
+    b_ = sv;
+    c_ = -(-3*fp + 3*sp + fv*tm + 2*sv*tm) / (tm*tm);
+    d_ = -(2*fp - 2*sp - fv*tm - sv*tm) / (tm*tm*tm);
 }
 
 SplinePoint SplineManager::getPoint(ros::Time time) {
     double t;
+    SplinePoint point;
     if (time <= t0_) {
         t = 0;
+        point.at_end = false;
     }
     else if (time >= tf_) {
         t = (tf_ - t0_).toSec();
+        point.at_end = true;
     }
     else {
         t = (time - t0_).toSec();
+        point.at_end = false;
     }
 
-    SplinePoint point;
+    
     point.pos = a_ + b_*t + c_*t*t + d_*t*t*t;
     point.vel = b_ + 2.0*c_*t + 3.0*d_*t*t;
     return point;

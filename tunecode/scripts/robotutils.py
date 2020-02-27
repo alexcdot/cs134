@@ -229,7 +229,7 @@ def hebi_set_forcegains(fullname, Kp, Kd, lam):
     command = CommandMsg()
     command.name = [fullname]
     command.settings.name = [fullname]
-    command.settings.save_current_settings = [False]
+    command.settings.save_current_settings = [True]
     command.settings.effort_gains.name = [fullname]
     command.settings.effort_gains.kp = [Kp]
     command.settings.effort_gains.kd = [Kd]
