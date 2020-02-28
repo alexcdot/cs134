@@ -247,6 +247,10 @@ class CheckerboardCalibrator:
 #  Detector Node Class
 #
 class Detector:
+
+    cap_height = 0.16 # 8 inches
+    band_height = 0.075 # 3 inches
+
     def __init__(self):
         # Instantiate a cascade detector.
         self.detector = None#cv2.CascadeClassifier(XMLfile)
@@ -263,7 +267,8 @@ class Detector:
         source_topic = rospy.resolve_name("/cam_feed/image_rect_color")
         output_topic = rospy.resolve_name("~image")
         calibration_topic = rospy.resolve_name("~calibration_image")
-        tplink_output_topic = rospy.resolve_name("/bottle_cap_dets")
+        cap_output_topic = rospy.resolve_name("/bottle_cap_dets")
+        band_output_topic = rospy.resolve_name("/bottle_band_det")
 
         first_image = rospy.wait_for_message(source_topic, Image)
         self.checkCalibrator.calibrate_checkboard(first_image)
@@ -280,10 +285,13 @@ class Detector:
         self.publisher = rospy.Publisher(output_topic,
                                          sensor_msgs.msg.Image,
                                          queue_size=1)
-        # Publish to the tplink output topic.
-        self.tplink_publisher = rospy.Publisher(tplink_output_topic,
+        # Publish to the cap output topic.
+        self.cap_publisher = rospy.Publisher(cap_output_topic,
                                                 Detection,
                                                 queue_size=1)
+
+        # Publish to the band output topic:
+        self.band_publisher = rospy.Publisher(band_output_topic,Detection,queue_size=1)
 
         # Publish to the calibration topic.
         self.calibration_publisher = rospy.Publisher(calibration_topic,
@@ -294,7 +302,7 @@ class Detector:
         rospy.loginfo("Detector configured with:")
         rospy.loginfo("Image source topic: " + source_topic)
         rospy.loginfo("Image output topic: " + output_topic)
-        rospy.loginfo("Tplink Rect output topic: " + tplink_output_topic)
+        rospy.loginfo("Tplink Rect output topic: " + cap_output_topic)
 
 
     def test_calibration(self, ros_image):
@@ -312,19 +320,15 @@ class Detector:
         # Convert to rgb scale.
         rgb_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
 
-        lower = (64,90,0)
-        upper = (200,200,32)
-
-        mask = cv2.inRange(cv_img,lower,upper)
-
         hsv_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2HSV)
         # convert from 360, 100, 100 to 180, 255, 255)
-        picked_color = (200.0 / 2, 75 * 2.55, 55 * 2.55)
-        tols = np.array([2, 30, 15]) * 2
-        lower = (picked_color[0] - tols[0], picked_color[1] - tols[1], picked_color[2] - tols[2])
-        upper = (picked_color[0] + tols[0], picked_color[1] + tols[1], picked_color[2] + tols[2])
-        mask = cv2.inRange(hsv_img,lower,upper)
-        ms = mask.shape
+        '''tols = np.array([2, 30, 15]) * 2
+
+        cap_picked_color = (200.0 / 2, 75 * 2.55, 55 * 2.55)
+        cap_lower = (picked_color[0] - tols[0], picked_color[1] - tols[1], picked_color[2] - tols[2])
+        cap_upper = (picked_color[0] + tols[0], picked_color[1] + tols[1], picked_color[2] + tols[2])
+        cap_mask = cv2.inRange(hsv_img,lower,upper)
+        ms = cap_mask.shape'''
         # mask[:, ms[1]/2] = 255
         # mask[ms[0]/2,:] = 255
         # # print("starting")
@@ -334,27 +338,73 @@ class Detector:
         #print(np.max(mask), np.min(mask))
         #mask = mask[:ms[0]/2, :ms[1]/2]
 
-        self.calibration_publisher.publish(self.bridge.cv2_to_imgmsg(mask, '8UC1'))
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-        #print("contours:", contours)
-        if len(contours) == 0:
-            print("no contours found")
-            return
-        blob = max(contours, key=lambda el: cv2.contourArea(el))
-        M = cv2.moments(blob)
-        center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+        cap_tols = np.array([5, 30, 15]) * 2
+        #cap_picked_color = (200.0 / 2, 75 * 2.55, 55 * 2.55) # old values
+        cap_picked_color = (185.0 / 2, 75 * 2.55, 55 * 2.55)
+        cap_lower = (cap_picked_color[0] - cap_tols[0], cap_picked_color[1] - cap_tols[1], cap_picked_color[2] - cap_tols[2])
+        cap_upper = (cap_picked_color[0] + cap_tols[0], cap_picked_color[1] + cap_tols[1], cap_picked_color[2] + cap_tols[2])
+        cap_mask = cv2.inRange(hsv_img,cap_lower,cap_upper)
+        cap_ms = cap_mask.shape
 
-        cv2.circle(cv_img, center, 2, (0,0,255), -1)
-        uv = np.array((center))
-        xw, yw = self.checkCalibrator.undistort(uv)
-        zw = 0.16#8 * 0.0254
-        detection_msg = Detection()
-        detection_msg.position = Vector3()
-        detection_msg.position.x = xw
-        detection_msg.position.y = yw
-        detection_msg.position.z = zw
-        print('x, y, z:', xw[0], yw[0], zw)
-        self.tplink_publisher.publish(detection_msg)
+        band_picked_color = (210 / 2, 85 * 2.55, 50 * 2.55)
+        band_tols = np.array([5,20,20]) * 2
+        band_lower = (band_picked_color[0] - band_tols[0], band_picked_color[1] - band_tols[1], band_picked_color[2] - band_tols[2])
+        band_upper = (band_picked_color[0] + band_tols[0], band_picked_color[1] + band_tols[1], band_picked_color[2] + band_tols[2])
+        band_mask = cv2.inRange(hsv_img,band_lower,band_upper)
+        band_ms = band_mask.shape
+
+        #self.calibration_publisher.publish(self.bridge.cv2_to_imgmsg(mask, '8UC1'))
+        cap_contours, _ = cv2.findContours(cap_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        band_contours, _ = cv2.findContours(band_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        #print("contours:", contours)
+        try:
+            band_blob = max(band_contours, key=lambda el: cv2.contourArea(el))
+            print("largest band blob: " + str(cv2.contourArea(band_blob)))
+            if cv2.contourArea(band_blob) > 100: # magic number for the size of the band
+                M = cv2.moments(band_blob)
+                detection_type = "band"
+        except ValueError:
+            pass
+
+        try:
+            cap_blob = max(cap_contours, key=lambda el: cv2.contourArea(el))
+            print("largest cap blob: " + str(cv2.contourArea(cap_blob)))
+            if cv2.contourArea(cap_blob) > 50: # magic number for the size of the cap
+                M = cv2.moments(cap_blob)
+                detection_type = "cap"
+        except ValueError:
+            pass
+
+        #self.calibration_publisher.publish(self.bridge.cv2_to_imgmsg(mask, '8UC1'))
+        #cap_contours, _ = cv2.findContours(cap_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        #band_contours, _ = cv2.findContours(band_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        #print("contours:", contours)
+        #if len(cap_contours) == 0:
+        #    print("no cap contours found")
+        #    return
+        #blob = max(cap_contours, key=lambda el: cv2.contourArea(el))
+        #M = cv2.moments(blob)
+        #center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+        if M is not None:
+            center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+
+            cv2.circle(cv_img, center, 2, (0,0,255), -1)
+            uv = np.array((center))
+            xw, yw = self.checkCalibrator.undistort(uv)
+            if detection_type = "cap":
+                zw = cap_height
+            else if detection_type = "band":
+                zw = band_height
+            detection_msg = Detection()
+            detection_msg.position = Vector3()
+            detection_msg.position.x = xw
+            detection_msg.position.y = yw
+            detection_msg.position.z = zw
+            print('x, y, z:', xw[0], yw[0], zw)
+            if detection_type = "cap":
+                self.cap_publisher.publish(detection_msg)
+            else if detection_type = "band":
+                self.band_publisher.publish(detection_msg)
 
         '''
         # Run the detector.
@@ -372,7 +422,7 @@ class Detector:
             detection_msg.y = y + h/2
             detection_msg.width = w
             detection_msg.height = h
-            self.tplink_publisher.publish(detection_msg)
+            self.cap_publisher.publish(detection_msg)
         '''
 
         # Convert back into a ROS image and republish (for debugging).
