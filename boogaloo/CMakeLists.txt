@@ -17,6 +17,7 @@ add_message_files(
   FILES
   JointCommand.msg
   PoseCommand.msg
+  ThrowCommand.msg
   RobotState.msg
   MassChange.msg
 )

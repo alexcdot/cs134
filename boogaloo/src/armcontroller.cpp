@@ -6,26 +6,6 @@ int main(int argc, char **argv) {
     
     ArmController controller = ArmController();
 
-    
-
-  // Create and run a servo loop at 100Hz until shutdown.
-    ros::Rate servo(100);
-    double    dt = servo.expectedCycleTime().toSec();
-    ROS_INFO("Running the servo loop with dt %f", dt);
-
-    ros::Time starttime = ros::Time::now();
-    ros::Time servotime;
-    while(ros::ok()) {
-        // Current time (since start).
-        servotime = ros::Time::now();
-        double t = (servotime - starttime).toSec();
-        //controller.runController(t);
-        // Wait for next turn.
-        ros::spinOnce();
-        servo.sleep();
-
-    }
-
     return 0;
 }
 
@@ -57,7 +37,7 @@ ArmController::ArmController() {
     current_pose_vel_ = initial_pose.jacobian * feedback_joint_vel_;
 
     current_state_ = ArmControllerState::FLOATING;
-    this->setSplinesJoint(current_joint_pos_, current_joint_pos_, current_joint_vel_, ros::Time::now());
+    this->setSplinesJoint(current_joint_pos_, current_joint_vel_, current_joint_pos_, ros::Time::now());
 
     point_pub_ = nh_.advertise<geometry_msgs::PointStamped>("/tippoint", 10);
     pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/tippose", 10);
@@ -71,6 +51,7 @@ ArmController::ArmController() {
     // Goal subscribers
     joint_goal_sub_ = nh_.subscribe("/joint_goal", 10, &ArmController::processJointCommand, this);
     tip_goal_sub_ = nh_.subscribe("/tip_goal", 10, &ArmController::processPoseCommand, this);
+    throw_goal_sub_ = nh_.subscribe("/throw_goal", 10, &ArmController::processThrowCommand, this);
     feedback_sub_ = nh_.subscribe("/hebiros/robot/feedback/joint_state", 10, &ArmController::processFeedback, this);
     mass_sub_ = nh_.subscribe("/mass_updates", 10, &Kinematics::updateMassStatus, &kinematics_);
 
@@ -149,6 +130,63 @@ void ArmController::runController(const ros::TimerEvent& time) {
         current_pose_pos_ = fkin.pose;
         current_pose_vel_ = fkin.jacobian * feedback_joint_vel_;
     }
+    else if (current_state_ == ArmControllerState::WINDUP) {
+        // Get joint pos/vel
+        PosVelPair joints = this->getSplinePoints(t);
+        Vector6d joint_torques = kinematics_.getExpectedJointTorques(joints.pos);
+
+        // Put joint targets in joint state
+        joint_state = kinematics_.jointsToJS(joints.pos, joints.vel, joint_torques);
+
+        // Run fkin to get jacobian for later
+        FKinResult fkin = kinematics_.runForwardKinematics(joints.pos);
+
+        fkin_result = fkin;
+
+        // Update current values
+        current_joint_pos_ = joints.pos;
+        current_joint_vel_ = joints.vel;
+        current_pose_pos_ = fkin.pose;
+        current_pose_vel_ = fkin.jacobian * joints.vel;
+
+        if (current_robot_state_.is_at_target) {
+            setSplinesThrow(current_joint_pos_, current_joint_vel_, requested_throw_pos_, requested_throw_vel_, ros::Time::now());
+            current_state_ = ArmControllerState::THROW;
+        }
+
+        current_robot_state_.is_at_target = false;
+    }
+    else if (current_state_ == ArmControllerState::THROW) {
+        // Get joint pos/vel
+        PosVelPair joints = this->getSplinePoints(t);
+        Vector6d joint_torques = kinematics_.getExpectedJointTorques(joints.pos);
+
+        // Put joint targets in joint state
+        joint_state = kinematics_.jointsToJS(joints.pos, joints.vel, joint_torques);
+
+        // Run fkin to get jacobian for later
+        FKinResult fkin = kinematics_.runForwardKinematics(joints.pos);
+
+        fkin_result = fkin;
+
+        // Update current values
+        current_joint_pos_ = joints.pos;
+        current_joint_vel_ = joints.vel;
+        current_pose_pos_ = fkin.pose;
+        current_pose_vel_ = fkin.jacobian * joints.vel;
+
+        if (current_robot_state_.is_at_target) {
+            Vector6d home = Vector6d::Zero();
+            home(GRIPPER) = 1;
+            setSplinesJoint(current_joint_pos_, current_joint_vel_, home, ros::Time::now());
+            current_state_ = ArmControllerState::MOVING_JOINT;
+            boogaloo::MassChange new_mass = boogaloo::MassChange();
+            new_mass.mass_status = boogaloo::MassChange::EMPTY;
+            kinematics_.updateMassStatus(new_mass);
+        }
+
+        current_robot_state_.is_at_target = false;
+    }
 
     joint_state_pub_.publish(joint_state);
     joint_command_pub_.publish(kinematics_.toHebi(joint_state));
@@ -181,11 +219,11 @@ void ArmController::processJointCommand(const boogaloo::JointCommand::ConstPtr& 
     if (msg->pose_follow) {
         current_state_ = ArmControllerState::MOVING_POINT;
         FKinResult fkin = kinematics_.runForwardKinematics(joint_command);
-        this->setSplinesPose(fkin.pose, current_pose_pos_, current_pose_vel_, curr_time);
+        this->setSplinesPose(current_pose_pos_, current_pose_vel_, fkin.pose, curr_time);
     } 
     else {
         current_state_ = ArmControllerState::MOVING_JOINT;
-        this->setSplinesJoint(joint_command, current_joint_pos_, current_joint_vel_, curr_time);
+        this->setSplinesJoint(current_joint_pos_, current_joint_vel_, joint_command, curr_time);
     }
 }
 
@@ -197,13 +235,46 @@ void ArmController::processPoseCommand(const boogaloo::PoseCommand::ConstPtr& ms
 
     if (msg->pose_follow) {
         current_state_ = ArmControllerState::MOVING_POINT;
-        this->setSplinesPose(pose_command, current_pose_pos_, current_pose_vel_, curr_time);
+        this->setSplinesPose(current_pose_pos_, current_pose_vel_, pose_command, curr_time);
     } 
     else {
         current_state_ = ArmControllerState::MOVING_JOINT;
         Vector6d joint_command = kinematics_.runInverseKinematics(pose_command);
-        this->setSplinesJoint(joint_command, current_joint_pos_, current_joint_vel_, curr_time);
+        this->setSplinesJoint(current_joint_pos_, current_joint_vel_, joint_command, curr_time);
     }
+}
+
+void ArmController::processThrowCommand(const boogaloo::ThrowCommand::ConstPtr& msg) {
+    ros::Time curr_time = ros::Time::now();
+
+    Vector6d windup_joint_pos;
+    windup_joint_pos <<
+        msg->yaw_ang,
+        0.0,
+        -3*PI/4,
+        0.0,
+        1.57,
+        1.0;
+    current_state_ = ArmControllerState::WINDUP;
+    setSplinesJoint(current_joint_pos_, current_joint_vel_, windup_joint_pos, curr_time);
+
+    requested_throw_pos_ <<
+        msg->yaw_ang,
+        0.0,
+        msg->elbow_ang - PI/2,
+        -(msg->wrist_ang - msg->elbow_ang) - PI/2,
+        1.57,
+        0.0;
+
+    requested_throw_vel_ <<
+        0.0,
+        0.0,
+        msg->elbow_vel,
+        -msg->wrist_vel,
+        0.0,
+        0.0;
+
+    cout << requested_throw_pos_ << endl;
 }
 
 void ArmController::processFeedback(const sensor_msgs::JointState::ConstPtr& msg) {
@@ -222,7 +293,7 @@ void ArmController::processFeedback(const sensor_msgs::JointState::ConstPtr& msg
     robot_state_pub_.publish(current_robot_state_);
 }
 
-void ArmController::setSplinesPose(Vector6d goal_pos, Vector6d start_pos, Vector6d start_vel, ros::Time t_start) {
+void ArmController::setSplinesPose(Vector6d start_pos, Vector6d start_vel, Vector6d goal_pos, ros::Time t_start) {
     double dist = (start_pos - goal_pos).head(3).norm();
     double avg_trans_speed = 0.2;
     double biggest_turn = (start_pos - goal_pos).tail(3).cwiseAbs().maxCoeff();
@@ -233,13 +304,40 @@ void ArmController::setSplinesPose(Vector6d goal_pos, Vector6d start_pos, Vector
     }
 }
 
-void ArmController::setSplinesJoint(Vector6d goal_pos, Vector6d start_pos, Vector6d start_vel, ros::Time t_start) {
+void ArmController::setSplinesJoint(Vector6d start_pos, Vector6d start_vel, Vector6d goal_pos, ros::Time t_start) {
     double biggest_turn = (start_pos - goal_pos).cwiseAbs().maxCoeff();
     double avg_rot_speed = 2.0;
     ros::Duration move_dur = ros::Duration(max(2.0, biggest_turn / avg_rot_speed));
     for (int i = 0; i < 6; i++) {
         spline_managers_[i].setSpline(start_pos(i), start_vel(i), goal_pos(i), 0.0, t_start, move_dur);
     }
+}
+
+void ArmController::setSplinesThrow(Vector6d start_pos, Vector6d start_vel, Vector6d goal_pos, Vector6d goal_vel, ros::Time t_start) {
+    // Solution to prevent windup
+    double time_elbow = 3*(goal_pos(ELBOW) - start_pos(ELBOW)) / (2*start_vel(ELBOW) + goal_vel(ELBOW));
+    double time_wrist = 3*(goal_pos(WRIST) - start_pos(WRIST)) / (2*start_vel(WRIST) + goal_vel(WRIST));
+
+    cout << "setting up throw " << time_elbow << " " << time_wrist << endl;
+
+    double actual_time = max(time_elbow, time_wrist);
+    ros::Duration move_dur = ros::Duration(actual_time);
+    ros::Duration elbow_delay = ros::Duration(actual_time - time_elbow);
+    ros::Duration wrist_delay = ros::Duration(actual_time - time_wrist);
+
+    ros::Duration gripper_dur = ros::Duration(0.1);
+
+    // Splines for yaw, shoulder, twist
+    spline_managers_[YAW].setSpline(start_pos(YAW), start_vel(YAW), goal_pos(YAW), goal_vel(YAW), t_start, move_dur);
+    spline_managers_[SHOULDER].setSpline(start_pos(SHOULDER), start_vel(SHOULDER), goal_pos(SHOULDER), goal_vel(SHOULDER), t_start, move_dur);
+    spline_managers_[TWIST].setSpline(start_pos(TWIST), start_vel(TWIST), goal_pos(TWIST), goal_vel(TWIST), t_start, move_dur);
+
+    // Spline for gripper (instant)
+    spline_managers_[GRIPPER].setSpline(start_pos(GRIPPER), start_vel(GRIPPER), goal_pos(GRIPPER), goal_vel(GRIPPER), t_start + move_dur, gripper_dur);
+
+    // Splines for elbow and wrist
+    spline_managers_[ELBOW].setSpline(start_pos(ELBOW), start_vel(ELBOW), goal_pos(ELBOW), goal_vel(ELBOW), t_start + elbow_delay, ros::Duration(time_elbow));
+    spline_managers_[WRIST].setSpline(start_pos(WRIST), start_vel(WRIST), goal_pos(WRIST), goal_vel(WRIST), t_start + wrist_delay, ros::Duration(time_wrist));
 }
 
 PosVelPair ArmController::getSplinePoints(ros::Time time) {

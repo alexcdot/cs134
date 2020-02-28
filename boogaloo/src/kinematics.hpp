@@ -45,18 +45,18 @@ class Kinematics {
     private:
     ArmProperties ARM_PROP = {
         {
-            vec(0, -0.124, 0.081),
-            vec(0, -0.051, 0.051),
-            vec(-0.606, 0, -0.064),
-            vec(0, 0.298, 0),
-            vec(0.038, 0, 0.110),
-            vec(0, 0, 0.056)
+            vec(0, -0.122, 0.081),
+            vec(0, -0.049, 0.062),
+            vec(-0.600, 0, -0.062),
+            vec(0, 0.294, 0),
+            vec(0.040, 0, 0.108),
+            vec(0, 0, 0.080)
         },
         {Rz(0), Rx(PI/2) * Rz(-PI/2), Rz(0), Rx(PI), Ry(PI/2), Rz(PI)},
         {0, 0, 0, 0, 0, 0},
         {1, 1, 2, 3, 1, -2.32},
-        {{0, -14.4, -5.16 / 2, 0.12 / 3, 0, 0}, {0, -18.7, -8.63 / 2, 3.58 / 3, 0, 0}},
-        {{0, -0.5, 0.9 / 2, 0 / 3, 0, 0}, {0, -0.5, 0 / 2, 0.0 / 3, 0, 0}}
+        {{0, -14.4, -5.16 / 2, 0.12 / 3, 0, 0}, {0, -18.7, -8.63 / 2, 4.61 / 3, 0, 0}, {0, -18.7, -8.63 / 2, 2.14 / 3, 0, 0}},
+        {{0, -0.5, 0.9 / 2, 0 / 3, 0, 0}, {0, -0.5, 0 / 2, 0.0 / 3, 0, 0}, {0, -0.5, 0 / 2, 0.0 / 3, 0, 0}}
         //-3.58
     };
     
@@ -74,7 +74,7 @@ class Kinematics {
     Joints jsToJoints(sensor_msgs::JointState joints);
     sensor_msgs::JointState toHebi(sensor_msgs::JointState normal_joints);
     sensor_msgs::JointState fromHebi(sensor_msgs::JointState hebi_joints);
-    void updateMassStatus(const boogaloo::MassChange::ConstPtr& msg);
+    void updateMassStatus(boogaloo::MassChange msg);
 };
 
 #endif

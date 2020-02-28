@@ -40,7 +40,6 @@ if __name__ == '__main__':
     mass_pub.publish(mass)
 
     cmd = JointCommand()
-    cmd.pose_follow = True
 
     pub_and_wait(joint_pub, cmd)
 
@@ -62,7 +61,7 @@ if __name__ == '__main__':
 
     pub_and_wait(tip_pub, cmd)
 
-    mass.mass_status = MassChange.BOTTLE
+    mass.mass_status = MassChange.BOTTLE_SIDE
     mass_pub.publish(mass)
 
     cmd.pos.z = 0.2
@@ -96,7 +95,7 @@ if __name__ == '__main__':
     cmd.gripper = 1
     pub_and_wait(tip_pub, cmd)
 
-    mass.mass_status = MassChange.BOTTLE
+    mass.mass_status = MassChange.BOTTLE_TOP
     mass_pub.publish(mass)
 
     cmd = JointCommand()
