@@ -22,6 +22,8 @@ from sensor_msgs.msg import Image
 from sensor_msgs.msg import CameraInfo
 from camera_calibration.calibrator import ChessboardInfo
 from camera_calibration.calibrator import Calibrator
+from cv2 import aruco
+
 
 import rospkg
 import os
@@ -50,10 +52,11 @@ class CheckerboardCalibrator:
         # Define the Checkerboard.  Note the OpenCV detector
         # apparently assumes more columns than rows.
         self.board = ChessboardInfo()
-        self.board.n_cols = 8
-        self.board.n_rows = 6
-        self.board.dim = 0.0254 * 29 / 32
+        self.board.n_cols = 4
+        self.board.n_rows = 3
+        self.board.dim = 0.0254 * 7 / 8
         self.K, self.D = intrinsic_params_from_file()
+        self.bridge = cv_bridge.CvBridge()
 
         # Instantiate a Calibrator, to extract corners etc.
         self.calibrator = Calibrator([self.board])
@@ -62,7 +65,7 @@ class CheckerboardCalibrator:
         self.R_world_wrt_cam = None
         self.x_world_wrt_cam = None
 
-    def calibrate(self, image):
+    def calibrate_checkboard(self, image):
         # Test for the presense of a checkerboard and pull out the
         # corners as a list of (u,v) data.
         gray = self.calibrator.mkgray(image)
@@ -86,6 +89,84 @@ class CheckerboardCalibrator:
         # Really these are lists of (u,v) and (x,y,z)
         self.locate_camera(xyz, corners)
 
+    def calibrate_charucoboard(self, ros_image):
+        # Convert into OpenCV image.
+        image = self.bridge.imgmsg_to_cv2(ros_image, "bgr8")
+
+        # ChAruco board variables
+        CHARUCOBOARD_ROWCOUNT = 5
+        CHARUCOBOARD_COLCOUNT = 5
+        ARUCO_DICT = aruco.Dictionary_get(aruco.DICT_5X5_50)
+        SQUARE_LENGTH = (1+5.0/8) * 0.0254
+        MARKER_LENGTH = (1+9.0/32) * 0.0254
+        # Create constants to be passed into OpenCV and Aruco methods
+        print(
+            CHARUCOBOARD_COLCOUNT > 1,
+            CHARUCOBOARD_ROWCOUNT > 1,
+            SQUARE_LENGTH > MARKER_LENGTH
+        )
+        CHARUCO_BOARD = aruco.CharucoBoard_create(
+                squaresX=CHARUCOBOARD_COLCOUNT,
+                squaresY=CHARUCOBOARD_ROWCOUNT,
+                squareLength=SQUARE_LENGTH,
+                markerLength=MARKER_LENGTH,
+                dictionary=ARUCO_DICT)
+
+        # Create the arrays and variables we'll use to store info like corners and IDs from images processed
+        corners_all = [] # Corners discovered in all images processed
+        ids_all = [] # Aruco ids corresponding to corners discovered
+        image_size = None # Determined at runtime
+
+        # Grayscale the image
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+        # Find aruco markers in the query image
+        corners, ids, _ = aruco.detectMarkers(
+                image=gray,
+                dictionary=ARUCO_DICT)
+
+        # Outline the aruco markers found in our query image
+        image = aruco.drawDetectedMarkers(
+                image=image,
+                corners=corners)
+
+        # Get charuco corners and ids from detected aruco markers
+        response, charuco_corners, charuco_ids = aruco.interpolateCornersCharuco(
+                markerCorners=corners,
+                markerIds=ids,
+                image=gray,
+                board=CHARUCO_BOARD)
+
+        # If a Charuco board was found, let's collect image/corner points
+        # Requiring at least 20 squares
+        if response > 5:
+            # Add these corners and ids to our calibration arrays
+            corners_all.append(charuco_corners)
+            ids_all.append(charuco_ids)
+
+            # Draw the Charuco board we've detected to show our calibrator the board was properly detected
+            image = aruco.drawDetectedCornersCharuco(
+                    image=image,
+                    charucoCorners=charuco_corners,
+                    charucoIds=charuco_ids)
+
+            # If our image size is unknown, set it now
+            if not image_size:
+                image_size = gray.shape[::-1]
+
+            # Reproportion the image, maxing width or height at 1000
+            # proportion = max(img.shape) / 1000.0
+            # img = cv2.resize(img, (int(img.shape[1]/proportion), int(img.shape[0]/proportion)))
+            # # Pause to display each image, waiting for key press
+            #cv2.imshow('Charuco board', img)
+            #cv2.waitKey(0)
+            return image
+
+        else:
+            print("Not able to detect a charuco board in image")
+            return None
+
+
     #
     #   Determine the camera position/orientation
     #
@@ -108,7 +189,7 @@ class CheckerboardCalibrator:
         self.x_cam_wrt_world = - np.matmul(self.R_cam_wrt_world, self.x_world_wrt_cam)
 
         # Report.
-        print("r cam wrt world", R_cam_wrt_world)
+        print("r cam wrt world", self.R_cam_wrt_world)
         print("Cam loc (relative to center of board): %6.3f, %6.3f, %6.3f" 
               % tuple(self.x_cam_wrt_world.reshape(3)))
 
@@ -162,10 +243,11 @@ class Detector:
         # image topic will be under the node name.
         source_topic = rospy.resolve_name("/cam_feed/image_rect_color")
         output_topic = rospy.resolve_name("~image")
+        calibration_topic = rospy.resolve_name("~calibration_image")
         tplink_output_topic = rospy.resolve_name("~tplink")
 
         first_image = rospy.wait_for_message(source_topic, Image)
-        self.checkCalibrator.calibrate(first_image)
+        self.checkCalibrator.calibrate_checkboard(first_image)
 
         # Subscribe to the source topic.  Using a queue size of one
         # means only the most recent message is stored for the next
@@ -184,17 +266,31 @@ class Detector:
                                          Rect,
                                          queue_size=1)
 
+        # Publish to the calibration topic.
+        self.calibration_publisher = rospy.Publisher(calibration_topic,
+                                         sensor_msgs.msg.Image,
+                                         queue_size=1)
+
         # Report.
         rospy.loginfo("Detector configured with:")
         rospy.loginfo("Image source topic: " + source_topic)
         rospy.loginfo("Image output topic: " + output_topic)
         rospy.loginfo("Tplink Rect output topic: " + tplink_output_topic)
 
-    def process(self, rosImage):
-        # Convert into OpenCV image.
-        cv_img = self.bridge.imgmsg_to_cv2(rosImage, "bgr8")
 
-        # Convert to gray scale.
+    def test_calibration(self, ros_image):
+        calibration_image = self.checkCalibrator.calibrate_charucoboard(ros_image)
+        print(type(calibration_image))
+        self.calibration_publisher.publish(
+            self.bridge.cv2_to_imgmsg(calibration_image, "bgr8"))
+
+
+    def process(self, ros_image):
+        #self.test_calibration(ros_image)
+        # Convert into OpenCV image.
+        cv_img = self.bridge.imgmsg_to_cv2(ros_image, "bgr8")
+
+        # Convert to rgb scale.
         rgb_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
 
         # Run the detector.
