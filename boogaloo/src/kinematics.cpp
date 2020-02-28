@@ -192,11 +192,11 @@ Vector6d Kinematics::getExpectedJointTorques(Vector6d joint_vals) {
                         ARM_PROP.grav_sin[mass_status_][SHOULDER] * sin(shoulder_ang) +
                         ARM_PROP.grav_cos[mass_status_][SHOULDER] * cos(shoulder_ang);
 
-    torques(GRIPPER) = max(0.0, joint_vals(GRIPPER) * (-6.0 / ARM_PROP.gearings[GRIPPER]));
+    torques(GRIPPER) = max(0.0, joint_vals(GRIPPER) * (-3.5 / ARM_PROP.gearings[GRIPPER]));
 
-    cout << "wrist " << joint_vals(SHOULDER) + joint_vals(ELBOW) - joint_vals(WRIST) - PI << " " << torques(WRIST) << endl <<
-     " elbow " << joint_vals(SHOULDER) + joint_vals(ELBOW) - (PI/2) << " " << torques(ELBOW) << endl <<
-     " shoulder " << joint_vals(SHOULDER) << " " << torques(SHOULDER) << endl;
+    // cout << "wrist " << joint_vals(SHOULDER) + joint_vals(ELBOW) - joint_vals(WRIST) - PI << " " << torques(WRIST) << endl <<
+    //  " elbow " << joint_vals(SHOULDER) + joint_vals(ELBOW) - (PI/2) << " " << torques(ELBOW) << endl <<
+    //  " shoulder " << joint_vals(SHOULDER) << " " << torques(SHOULDER) << endl;
     return torques;
 }
 
@@ -254,6 +254,6 @@ sensor_msgs::JointState Kinematics::fromHebi(sensor_msgs::JointState hebi_joints
     return normal_joints;
 }
 
-void Kinematics::updateMassStatus(const boogaloo::MassChange::ConstPtr& msg) {
-    mass_status_ = msg->mass_status;
+void Kinematics::updateMassStatus(boogaloo::MassChange msg) {
+    mass_status_ = msg.mass_status;
 }

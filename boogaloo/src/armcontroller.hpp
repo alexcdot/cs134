@@ -8,6 +8,7 @@
 #include "boogaloo/JointCommand.h"
 #include "boogaloo/PoseCommand.h"
 #include "boogaloo/RobotState.h"
+#include "boogaloo/ThrowCommand.h"
 #include "sensor_msgs/JointState.h"
 #include "geometry_msgs/PointStamped.h"
 #include "geometry_msgs/PoseStamped.h"
@@ -15,7 +16,9 @@
 enum class ArmControllerState {
     MOVING_JOINT,
     MOVING_POINT,
-    FLOATING
+    FLOATING,
+    WINDUP,
+    THROW
 };
 
 struct PosVelPair {
@@ -33,6 +36,10 @@ class ArmController {
     Vector6d current_pose_vel_;
     Vector6d feedback_joint_pos_;
     Vector6d feedback_joint_vel_;
+    
+    Vector6d requested_throw_pos_;
+    Vector6d requested_throw_vel_;
+
     SplineManager spline_managers_[6];
     Kinematics kinematics_;
 
@@ -41,6 +48,7 @@ class ArmController {
     ros::Subscriber arm_state_sub_;
     ros::Subscriber tip_goal_sub_;
     ros::Subscriber joint_goal_sub_;
+    ros::Subscriber throw_goal_sub_;
     ros::Subscriber feedback_sub_;
     ros::Subscriber mass_sub_;
     
@@ -62,12 +70,14 @@ class ArmController {
 
     void processJointCommand(const boogaloo::JointCommand::ConstPtr& msg);
     void processPoseCommand(const boogaloo::PoseCommand::ConstPtr& msg);
+    void processThrowCommand(const boogaloo::ThrowCommand::ConstPtr& msg);
     void processFeedback(const sensor_msgs::JointState::ConstPtr& msg);
 
     void runController(const ros::TimerEvent& time);
 
-    void setSplinesPose(Vector6d goal_pos, Vector6d start_pos, Vector6d start_vel, ros::Time t_start);
-    void setSplinesJoint(Vector6d goal_pos, Vector6d start_pos, Vector6d start_vel, ros::Time t_start);
+    void setSplinesPose(Vector6d start_pos, Vector6d start_vel, Vector6d goal_pos, ros::Time t_start);
+    void setSplinesJoint(Vector6d start_pos, Vector6d start_vel, Vector6d goal_pos, ros::Time t_start);
+    void setSplinesThrow(Vector6d start_pos, Vector6d start_vel, Vector6d goal_pos, Vector6d goal_vel, ros::Time t_start);
     PosVelPair getSplinePoints(ros::Time time);
 };
 
