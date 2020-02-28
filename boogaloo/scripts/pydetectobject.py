@@ -263,7 +263,7 @@ class Detector:
         source_topic = rospy.resolve_name("/cam_feed/image_rect_color")
         output_topic = rospy.resolve_name("~image")
         calibration_topic = rospy.resolve_name("~calibration_image")
-        tplink_output_topic = rospy.resolve_name("~tplink")
+        tplink_output_topic = rospy.resolve_name("/bottle_cap_dets")
 
         first_image = rospy.wait_for_message(source_topic, Image)
         self.checkCalibrator.calibrate_checkboard(first_image)
@@ -320,7 +320,7 @@ class Detector:
         hsv_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2HSV)
         # convert from 360, 100, 100 to 180, 255, 255)
         picked_color = (200.0 / 2, 75 * 2.55, 55 * 2.55)
-        tols = np.array([2, 30, 15]) * 3
+        tols = np.array([2, 30, 15]) * 2
         lower = (picked_color[0] - tols[0], picked_color[1] - tols[1], picked_color[2] - tols[2])
         upper = (picked_color[0] + tols[0], picked_color[1] + tols[1], picked_color[2] + tols[2])
         mask = cv2.inRange(hsv_img,lower,upper)
@@ -347,13 +347,13 @@ class Detector:
         cv2.circle(cv_img, center, 2, (0,0,255), -1)
         uv = np.array((center))
         xw, yw = self.checkCalibrator.undistort(uv)
-
+        zw = 0.16#8 * 0.0254
         detection_msg = Detection()
         detection_msg.position = Vector3()
         detection_msg.position.x = xw
         detection_msg.position.y = yw
-        detection_msg.position.z = 0.15#8 * 0.0254
-        print('x, y, z:', xw[0], yw[0], 0.15)
+        detection_msg.position.z = zw
+        print('x, y, z:', xw[0], yw[0], zw)
         self.tplink_publisher.publish(detection_msg)
 
         '''

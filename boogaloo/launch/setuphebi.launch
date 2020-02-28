@@ -1,0 +1,26 @@
+<launch>
+
+
+    <node pkg="hebiros" type="hebiros_node" name="hebiros_node" output="screen">
+    </node>
+
+    <node pkg="boogaloo" type="pydefinerobot.py" name="define_robot" output="screen">
+    </node>
+
+    <node pkg="boogaloo" type="armcontroller" name="arm_controller" output="screen">
+    </node>
+
+    <node pkg="usb_cam" type="usb_cam_node" name="cam_feed" output="screen">
+        <param name="pixel_format" value="yuyv"/>
+        <param name="camera_name" value="logitech_cam"/>
+        <param name="image_width" value="640"/>
+        <param name="image_height" value="480"/>
+    </node>
+
+    <node pkg="image_proc" type="image_proc" name="image_proc" output="screen" ns="cam_feed">
+    </node>
+
+    <node pkg="boogaloo" type="pydetectobject.py" name="detector" output="screen">
+    </node>
+
+</launch>
