@@ -18,6 +18,7 @@ import cv2
 import cv_bridge
 import numpy as np
 from opencv_apps.msg import Rect
+from opencv_apps.msg import Point2D
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import CameraInfo
 from camera_calibration.calibrator import ChessboardInfo
@@ -197,6 +198,24 @@ class Detector:
         # Convert to gray scale.
         rgb_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
 
+        lower = (64,90,0)
+        upper = (200,200,32)
+
+        mask = cv2.inRange(cv_image,lower,upper)
+
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        blob = max(contours, key=lambda el: cv2.contourArea(el))
+        M = cv2.moments(blob)
+        center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+
+        cv2.circle(cv_image, center, 2, (0,0,255), -1)
+
+        detection_msg = Point2D()
+        detection_msg.x = center[0]
+        detection_msg.y = center[1]
+        self.tplink_publisher.publish(detection_msg)
+
+        '''
         # Run the detector.
         objects = []#self.detector...
 
@@ -213,7 +232,7 @@ class Detector:
             detection_msg.width = w
             detection_msg.height = h
             self.tplink_publisher.publish(detection_msg)
-
+        '''
 
         # Convert back into a ROS image and republish (for debugging).
         self.publisher.publish(
