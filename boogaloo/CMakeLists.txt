@@ -20,6 +20,7 @@ add_message_files(
   ThrowCommand.msg
   RobotState.msg
   MassChange.msg
+  Detection.msg
 )
 
 generate_messages(
