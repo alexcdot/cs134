@@ -17,9 +17,9 @@ import sensor_msgs.msg
 import cv2
 import cv_bridge
 import numpy as np
-from opencv_apps.msg import Rect
-from opencv_apps.msg import Point2D
 from sensor_msgs.msg import Image
+from boogaloo.msg import Detection
+from geometry_msgs.msg import Vector3
 from sensor_msgs.msg import CameraInfo
 from camera_calibration.calibrator import ChessboardInfo
 from camera_calibration.calibrator import Calibrator
@@ -55,7 +55,7 @@ class CheckerboardCalibrator:
         self.board = ChessboardInfo()
         self.board.n_cols = 4
         self.board.n_rows = 3
-        self.board.dim = 0.0254 * 7 / 8
+        self.board.dim = 0.0254 * (1 + 7 / 8.0)
         self.K, self.D = intrinsic_params_from_file()
         self.bridge = cv_bridge.CvBridge()
 
@@ -77,14 +77,16 @@ class CheckerboardCalibrator:
         corners = corners.reshape(-1,2)
 
         # Set the (X,Y,Z) data for each corner.  This presumes the
-        # checkerboard is on the Z=0 plane and centered in X/Y!
-        # TODO: don't assume checkerboard is centered in X/Y - find out its offset
+        # checkerboard is on the Z=0 plane.
+        # x = 82.5, y = -28.9
+        X_CENTER = 0.834
+        Y_CENTER = -0.331
         xyz = np.zeros((len(corners), 3))
         for r in range(board.n_rows):
             for c in range(board.n_cols):
                 i = r*board.n_cols + c
-                xyz[i][0] = board.dim * (c - (board.n_cols-1)/2.0)
-                xyz[i][1] = board.dim * ((board.n_rows-1)/2.0 - r)
+                xyz[i][0] = board.dim * (c - (board.n_cols-1)/2.0) + X_CENTER
+                xyz[i][1] = board.dim * ((board.n_rows-1)/2.0 - r) + Y_CENTER
                 xyz[i][2] = 0
 
         # Really these are lists of (u,v) and (x,y,z)
@@ -194,22 +196,20 @@ class CheckerboardCalibrator:
         print("Cam loc (relative to center of board): %6.3f, %6.3f, %6.3f" 
               % tuple(self.x_cam_wrt_world.reshape(3)))
 
-        self.undistort(corners)
+        self.check_calibration(corners)
 
     #
     #   Undistort
     #
     #   Compute the normalized (image) coordinates from the pixels
     #
-    def undistort(self, corners):
-        # Pick a (u,v) pair.  I used the top-left corner for
-        # testing, which is (-3.5, 2.5) * 0.0254 * 29 / 32
-        uv = corners[0]
-
+    def undistort(self, uv):
         # Map to the normalized (image) coordinates.  As above, the API
         # assume a set of lists of points, so reshape accordingly.
-        xybar = cv2.undistortPoints(uv.reshape(1,-1,2), self.K, self.D).reshape(2)
-        print('xbar, ybar:', xybar)
+        #print(uv.reshape(1,-1,2), uv.reshape(1,-1,2).shape)
+        #raise Exception
+        xybar = cv2.undistortPoints(uv.reshape(1,-1,2).astype(float), self.K, self.D).reshape(2)
+        #print('xbar, ybar:', xybar)
 
         # Now map into the world.  Here I am assuming zw = 0...
         Rc = self.R_cam_wrt_world
@@ -219,6 +219,24 @@ class CheckerboardCalibrator:
         xw = lam*(Rc[0][0]*xybar[0] + Rc[0][1]*xybar[1] + Rc[0][2]) + xc[0]
         yw = lam*(Rc[1][0]*xybar[0] + Rc[1][1]*xybar[1] + Rc[1][2]) + xc[1]
 
+        BOTTLE_HEIGHT = 0.2
+        cam_height = self.x_cam_wrt_world[2]
+        factor = BOTTLE_HEIGHT / cam_height
+        bottle_to_cam_xy = (
+            self.x_cam_wrt_world[0] - xw,
+            self.x_cam_wrt_world[1] - yw
+        )
+        xw += bottle_to_cam_xy[0] * factor
+        yw += bottle_to_cam_xy[1] * factor
+
+        return (xw, yw)
+
+
+    def check_calibration(self, corners):
+        # Pick a (u,v) pair.  I used the top-left corner for
+        # testing, which is (-3.5, 2.5) * 0.0254 * 29 / 32
+        uv = corners[0]
+        xw, yw = self.undistort(uv)
         # Check the location in number of squares...
         n_x = xw / self.board.dim
         n_y = yw / self.board.dim
@@ -264,8 +282,8 @@ class Detector:
                                          queue_size=1)
         # Publish to the tplink output topic.
         self.tplink_publisher = rospy.Publisher(tplink_output_topic,
-                                         Rect,
-                                         queue_size=1)
+                                                Detection,
+                                                queue_size=1)
 
         # Publish to the calibration topic.
         self.calibration_publisher = rospy.Publisher(calibration_topic,
@@ -297,18 +315,45 @@ class Detector:
         lower = (64,90,0)
         upper = (200,200,32)
 
-        mask = cv2.inRange(cv_image,lower,upper)
+        mask = cv2.inRange(cv_img,lower,upper)
 
+        hsv_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2HSV)
+        # convert from 360, 100, 100 to 180, 255, 255)
+        picked_color = (200.0 / 2, 75 * 2.55, 55 * 2.55)
+        tols = np.array([2, 30, 15]) * 3
+        lower = (picked_color[0] - tols[0], picked_color[1] - tols[1], picked_color[2] - tols[2])
+        upper = (picked_color[0] + tols[0], picked_color[1] + tols[1], picked_color[2] + tols[2])
+        mask = cv2.inRange(hsv_img,lower,upper)
+        ms = mask.shape
+        # mask[:, ms[1]/2] = 255
+        # mask[ms[0]/2,:] = 255
+        # # print("starting")
+        # print(hsv_img[ms[0]/2 - 5:ms[0]/2+5, ms[1]/2 - 5:ms[1]/2+5])
+        
+        #exit(1)
+        #print(np.max(mask), np.min(mask))
+        #mask = mask[:ms[0]/2, :ms[1]/2]
+
+        self.calibration_publisher.publish(self.bridge.cv2_to_imgmsg(mask, '8UC1'))
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        #print("contours:", contours)
+        if len(contours) == 0:
+            print("no contours found")
+            return
         blob = max(contours, key=lambda el: cv2.contourArea(el))
         M = cv2.moments(blob)
         center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
 
-        cv2.circle(cv_image, center, 2, (0,0,255), -1)
+        cv2.circle(cv_img, center, 2, (0,0,255), -1)
+        uv = np.array((center))
+        xw, yw = self.checkCalibrator.undistort(uv)
 
-        detection_msg = Point2D()
-        detection_msg.x = center[0]
-        detection_msg.y = center[1]
+        detection_msg = Detection()
+        detection_msg.position = Vector3()
+        detection_msg.position.x = xw
+        detection_msg.position.y = yw
+        detection_msg.position.z = 0.15#8 * 0.0254
+        print('x, y, z:', xw[0], yw[0], 0.15)
         self.tplink_publisher.publish(detection_msg)
 
         '''
