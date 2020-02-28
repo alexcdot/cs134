@@ -191,6 +191,8 @@ void ArmController::runController(const ros::TimerEvent& time) {
     joint_state_pub_.publish(joint_state);
     joint_command_pub_.publish(kinematics_.toHebi(joint_state));
 
+    cout << current_joint_pos_ - feedback_joint_pos_ << endl << endl;
+
     // Publish point and pose
     geometry_msgs::PointStamped point;
     point.header.frame_id = "world";
