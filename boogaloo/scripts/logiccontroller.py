@@ -45,6 +45,14 @@ def bottle_cap_det_callback(data):
         if active_state == wait_bottle_cap_det:
             bottle_cap_det = data
 
+def startup():
+    global joint_pub, mass_pub, active_state
+    joint_msg = JointCommand()
+    mass_msg = MassChange()
+    publish_msg(joint_pub, joint_msg)
+    publish_msg(mass_pub, mass_msg)
+    active_state = wait_bottle_cap_det
+
 def wait_bottle_cap_det():
     global bottle_cap_det, active_state
     print('Waiting for det')
@@ -134,7 +142,7 @@ def main():
         ros.sleep(ros.Duration(0.1))
     ros.loginfo('Got current state!')
 
-    active_state = wait_bottle_cap_det
+    active_state = startup
 
     last_msg_time = ros.Time.now()
 

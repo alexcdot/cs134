@@ -248,10 +248,10 @@ class CheckerboardCalibrator:
 #
 class Detector:
 
-    cap_height = 0.16 # 8 inches
-    band_height = 0.075 # 3 inches
 
     def __init__(self):
+        self.cap_height = 0.16
+        self.band_height = 0.075
         # Instantiate a cascade detector.
         self.detector = None#cv2.CascadeClassifier(XMLfile)
 
@@ -357,12 +357,14 @@ class Detector:
         cap_contours, _ = cv2.findContours(cap_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
         band_contours, _ = cv2.findContours(band_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
         #print("contours:", contours)
+        found = False
         try:
             band_blob = max(band_contours, key=lambda el: cv2.contourArea(el))
             print("largest band blob: " + str(cv2.contourArea(band_blob)))
             if cv2.contourArea(band_blob) > 100: # magic number for the size of the band
                 M = cv2.moments(band_blob)
                 detection_type = "band"
+                found = True
         except ValueError:
             pass
 
@@ -372,6 +374,7 @@ class Detector:
             if cv2.contourArea(cap_blob) > 50: # magic number for the size of the cap
                 M = cv2.moments(cap_blob)
                 detection_type = "cap"
+                found = True
         except ValueError:
             pass
 
@@ -385,25 +388,25 @@ class Detector:
         #blob = max(cap_contours, key=lambda el: cv2.contourArea(el))
         #M = cv2.moments(blob)
         #center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
-        if M is not None:
+        if found and M is not None:
             center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
 
             cv2.circle(cv_img, center, 2, (0,0,255), -1)
             uv = np.array((center))
             xw, yw = self.checkCalibrator.undistort(uv)
-            if detection_type = "cap":
-                zw = cap_height
-            else if detection_type = "band":
-                zw = band_height
+            if detection_type == "cap":
+                zw = self.cap_height
+            elif detection_type == "band":
+                zw = self.band_height
             detection_msg = Detection()
             detection_msg.position = Vector3()
             detection_msg.position.x = xw
             detection_msg.position.y = yw
             detection_msg.position.z = zw
             print('x, y, z:', xw[0], yw[0], zw)
-            if detection_type = "cap":
+            if detection_type == "cap":
                 self.cap_publisher.publish(detection_msg)
-            else if detection_type = "band":
+            elif detection_type == "band":
                 self.band_publisher.publish(detection_msg)
 
         '''

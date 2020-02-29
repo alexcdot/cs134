@@ -235,11 +235,21 @@ sensor_msgs::JointState Kinematics::toHebi(sensor_msgs::JointState normal_joints
             hebi_joints.effort.push_back(normal_joints.effort[i] * ARM_PROP.gearings[i]);
     }
     hebi_joints.header = normal_joints.header;
+
+    // if (hebi_joints.effort[ELBOW] < 0) {
+    //     hebi_joints.position[ELBOW] += 0.10;
+    // }
+
     return hebi_joints;
 }
 
 sensor_msgs::JointState Kinematics::fromHebi(sensor_msgs::JointState hebi_joints) {
     sensor_msgs::JointState normal_joints;
+
+    // if (hebi_joints.effort[ELBOW] < 0) {
+    //     hebi_joints.position[ELBOW] -= 0.10;
+    // }
+
     for (int i = 0; i < 6; i++) {
         normal_joints.name.push_back(hebi_joints.name[i]);
         if (!hebi_joints.position.empty())
