@@ -267,6 +267,7 @@ class Detector:
         source_topic = rospy.resolve_name("/cam_feed/image_rect_color")
         output_topic = rospy.resolve_name("~image")
         calibration_topic = rospy.resolve_name("~calibration_image")
+        activation_topic = rospy.resolve_name("/activation")
         cap_output_topic = rospy.resolve_name("/bottle_cap_dets")
         band_output_topic = rospy.resolve_name("/bottle_band_det")
 
@@ -285,6 +286,10 @@ class Detector:
         self.publisher = rospy.Publisher(output_topic,
                                          sensor_msgs.msg.Image,
                                          queue_size=1)
+        
+        # Publish to the activation topic.
+        self.activation_publisher = rospy.Publisher(activation_topic, Activation, queue_size=1)
+
         # Publish to the cap output topic.
         self.cap_publisher = rospy.Publisher(cap_output_topic,
                                                 Detection,
@@ -311,6 +316,24 @@ class Detector:
         self.calibration_publisher.publish(
             self.bridge.cv2_to_imgmsg(calibration_image, "bgr8"))
 
+def detect(image, color, tols, min_size):
+
+    lower = (color[0] - tols[0], color[1] - tols[1], color[2] - tols[2])
+    upper = (color[0] + tols[0], color[1] + tols[1], color[2] + tols[2])
+
+    mask = cv2.inRange(image, lower, upper)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    try:
+        blob = max(contours, key=lambda el: cv2.contourArea(el))
+        if cv2.contourArea(blob) > min_size:
+            M = cv2.moments(blob)
+            center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+            return mask, center, M
+        else:
+            return mask, None, None
+
+    except ValueError:
+        return mask, None, None
 
     def process(self, ros_image):
         #self.test_calibration(ros_image)
@@ -338,7 +361,7 @@ class Detector:
         #print(np.max(mask), np.min(mask))
         #mask = mask[:ms[0]/2, :ms[1]/2]
 
-        cap_tols = np.array([5, 30, 15]) * 2
+        '''cap_tols = np.array([5, 30, 15]) * 2
         #cap_picked_color = (200.0 / 2, 75 * 2.55, 55 * 2.55) # old values
         cap_picked_color = (185.0 / 2, 75 * 2.55, 55 * 2.55)
         cap_lower = (cap_picked_color[0] - cap_tols[0], cap_picked_color[1] - cap_tols[1], cap_picked_color[2] - cap_tols[2])
@@ -377,6 +400,7 @@ class Detector:
                 found = True
         except ValueError:
             pass
+        '''
 
         #self.calibration_publisher.publish(self.bridge.cv2_to_imgmsg(mask, '8UC1'))
         #cap_contours, _ = cv2.findContours(cap_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
@@ -388,7 +412,7 @@ class Detector:
         #blob = max(cap_contours, key=lambda el: cv2.contourArea(el))
         #M = cv2.moments(blob)
         #center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
-        if found and M is not None:
+        '''if found and M is not None:
             center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
 
             cv2.circle(cv_img, center, 2, (0,0,255), -1)
@@ -407,7 +431,70 @@ class Detector:
             if detection_type == "cap":
                 self.cap_publisher.publish(detection_msg)
             elif detection_type == "band":
-                self.band_publisher.publish(detection_msg)
+                self.band_publisher.publish(detection_msg)'''
+
+        on_picked_color = (155 / 2, 53 * 2.55, 48 * 2.55)
+        on_tols = (10, 40, 40)
+        on_mask, on_center, _ = detect(hsv_img, on_picked_color, on_tols, 100)
+
+        active_msg = Activation()
+        if on_center is None:
+            print("robot is active!")
+            active_msg.active = True
+        else:
+            active_msg.active = False
+        self.activation_publisher.publish(active_msg)
+
+
+        #cap_picked_color = (200.0 / 2, 75 * 2.55, 55 * 2.55) # old values
+        cap_picked_color = (185.0 / 2, 75 * 2.55, 55 * 2.55)
+        cap_tols = (10, 60, 30)
+        cap_mask, cap_center, _ = detect(hsv_img, cap_picked_color, cap_tols, 50)
+
+        band_picked_color = (210 / 2, 85 * 2.55, 50 * 2.55)
+        band_tols = (10,40,40)
+        band_mask, band_center, band_moments = detect(hsv_img, band_picked_color, band_tols, 100)
+
+        #self.calibration_publisher.publish(self.bridge.cv2_to_imgmsg(mask, '8UC1'))
+
+        if cap_center is not None:
+            cv2.circle(cv_img, cap_center, 2, (0, 0, 255), -1)
+            uv = np.array((cap_center))
+            xw, yw = self.checkCalibrator.undistort(uv)
+            zw=self.cap_height
+            detection_msg = Detection()
+            detection_msg.position = Vector3()
+            detection_msg.position.x = xw
+            detection_msg.position.y = yw
+            detection_msg.position.z = zw
+            print('band x, y, z:', xw[0], yw[0], zw)
+            self.cap_publisher.publish(detection_msg)
+        elif band_center is not None:
+            cv2.circle(cv_img, band_center, 2, (0,0,255), -1)
+            uv = np.array((band_center))
+            xw, yw = self.checkCalibrator.undistort(uv)
+            zw=self.band_height
+            detection_msg = Detection()
+            detection_msg.position = Vector3()
+            detection_msg.position.x = xw
+            detection_msg.position.y = yw
+            detection_msg.position.z = zw
+            print('band x, y, z:', xw[0], yw[0], zw)
+            self.band_publisher.publish(detection_msg)
+
+        #if M is not None:
+        #    center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+        #    cv2.circle(cv_img, center, 2, (0,0,255), -1)
+            #uv = np.array((center))
+            #xw, yw = self.checkCalibrator.undistort(uv)
+            #zw = 0.16#8 * 0.0254
+            #detection_msg = Detection()
+            #detection_msg.position = Vector3()
+            #detection_msg.position.x = xw
+            #detection_msg.position.y = yw
+            #detection_msg.position.z = zw
+            #print('x, y, z:', xw[0], yw[0], zw)
+            #self.tplink_publisher.publish(detection_msg)
 
         '''
         # Run the detector.
