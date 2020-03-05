@@ -105,7 +105,7 @@ class CheckerboardCalibrator:
         """
         Hand measured
         checkerboard, 0.7735 + 0.055 = 0.8285, 0.3165
-        18, 0.727 + 0.055 = 0.7814, -0.085
+        18, 0.727 + 0.055 = 0.7914, -0.085
         12 0.2395 + 0.055 = 0.2945, 0.192
         42 0.148 + 0.055 = 0.203,-0.318
         """
@@ -345,7 +345,7 @@ class CheckerboardCalibrator:
         yw += obj_to_cam_xy[1] * factor
 
         # hacky x axis correction for bloating
-        xw += 0.03 / max(1, (xw - 0.10) * 100) + 0.005
+        xw += 0.025 / max(1, (xw - 0.10) * 100) + 0.01
         return (xw, yw)
 
     def undistort_cap(self, uv):
