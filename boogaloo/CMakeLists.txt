@@ -21,6 +21,7 @@ add_message_files(
   RobotState.msg
   MassChange.msg
   Detection.msg
+  Activation.msg
 )
 
 generate_messages(
