@@ -18,7 +18,7 @@ import cv2
 import cv_bridge
 import numpy as np
 from sensor_msgs.msg import Image
-from boogaloo.msg import Detection
+from boogaloo.msg import Detection, Activation
 from geometry_msgs.msg import Vector3
 from sensor_msgs.msg import CameraInfo
 from camera_calibration.calibrator import ChessboardInfo
@@ -316,24 +316,24 @@ class Detector:
         self.calibration_publisher.publish(
             self.bridge.cv2_to_imgmsg(calibration_image, "bgr8"))
 
-def detect(image, color, tols, min_size):
+    def detect(self, image, color, tols, min_size):
 
-    lower = (color[0] - tols[0], color[1] - tols[1], color[2] - tols[2])
-    upper = (color[0] + tols[0], color[1] + tols[1], color[2] + tols[2])
+        lower = (color[0] - tols[0], color[1] - tols[1], color[2] - tols[2])
+        upper = (color[0] + tols[0], color[1] + tols[1], color[2] + tols[2])
 
-    mask = cv2.inRange(image, lower, upper)
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    try:
-        blob = max(contours, key=lambda el: cv2.contourArea(el))
-        if cv2.contourArea(blob) > min_size:
-            M = cv2.moments(blob)
-            center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
-            return mask, center, M
-        else:
+        mask = cv2.inRange(image, lower, upper)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        try:
+            blob = max(contours, key=lambda el: cv2.contourArea(el))
+            if cv2.contourArea(blob) > min_size:
+                M = cv2.moments(blob)
+                center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+                return mask, center, M
+            else:
+                return mask, None, None
+
+        except ValueError:
             return mask, None, None
-
-    except ValueError:
-        return mask, None, None
 
     def process(self, ros_image):
         #self.test_calibration(ros_image)
@@ -431,11 +431,12 @@ def detect(image, color, tols, min_size):
             if detection_type == "cap":
                 self.cap_publisher.publish(detection_msg)
             elif detection_type == "band":
-                self.band_publisher.publish(detection_msg)'''
+                self.band_publisher.publish(detection_msg)
+        '''
 
         on_picked_color = (155 / 2, 53 * 2.55, 48 * 2.55)
         on_tols = (10, 40, 40)
-        on_mask, on_center, _ = detect(hsv_img, on_picked_color, on_tols, 100)
+        on_mask, on_center, _ = self.detect(hsv_img, on_picked_color, on_tols, 100)
 
         active_msg = Activation()
         if on_center is None:
@@ -449,11 +450,11 @@ def detect(image, color, tols, min_size):
         #cap_picked_color = (200.0 / 2, 75 * 2.55, 55 * 2.55) # old values
         cap_picked_color = (185.0 / 2, 75 * 2.55, 55 * 2.55)
         cap_tols = (10, 60, 30)
-        cap_mask, cap_center, _ = detect(hsv_img, cap_picked_color, cap_tols, 50)
+        cap_mask, cap_center, _ = self.detect(hsv_img, cap_picked_color, cap_tols, 50)
 
         band_picked_color = (210 / 2, 85 * 2.55, 50 * 2.55)
         band_tols = (10,40,40)
-        band_mask, band_center, band_moments = detect(hsv_img, band_picked_color, band_tols, 100)
+        band_mask, band_center, band_moments = self.detect(hsv_img, band_picked_color, band_tols, 100)
 
         #self.calibration_publisher.publish(self.bridge.cv2_to_imgmsg(mask, '8UC1'))
 
