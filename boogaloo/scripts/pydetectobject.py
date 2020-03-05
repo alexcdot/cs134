@@ -78,9 +78,31 @@ class CheckerboardCalibrator:
 
         # Set the (X,Y,Z) data for each corner.  This presumes the
         # checkerboard is on the Z=0 plane.
-        # x = 82.5, y = -28.9
-        X_CENTER = 0.834
-        Y_CENTER = -0.331
+        ## 02/28 measurements
+        ## x = 82.5, y = -28.9
+        ## X_CENTER = 0.834
+        ## Y_CENTER = -0.331
+        # 03/04 measurements
+        X_CENTER = 0.8285
+        Y_CENTER = -0.3165
+        """
+        Robot thinks
+        checkerboard 0.838 x, -0.311 y
+        aruco large square, width 6 inchs / 15.2 cm
+        18 aruco top right corner 0.791 x, -0.080 y
+        12 aruco top right 0.294 x, 0.194
+        42 topleft corner of far 0.363  x, -0.310
+        42 topright corner of far 0.363  - 0.152 x, -0.310
+        """
+
+        """
+        Hand measured
+        checkerboard, 0.7735 + 0.055 = 0.8285, 0.3165
+        18, 0.727 + 0.055 = 0.7814, -0.085
+        12 0.2395 + 0.055, -0.192
+        42 0.148 + 0.055,0.318
+        """
+
         xyz = np.zeros((len(corners), 3))
         for r in range(board.n_rows):
             for c in range(board.n_cols):
