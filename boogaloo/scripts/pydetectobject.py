@@ -25,7 +25,6 @@ from camera_calibration.calibrator import ChessboardInfo
 from camera_calibration.calibrator import Calibrator
 from cv2 import aruco
 
-
 import rospkg
 import os
 import errno
@@ -47,6 +46,10 @@ def intrinsic_params_from_file():
     D = np.float64(msg.D)
     return K, D
 
+CAP_HEIGHT = 0.20
+BAND_HEIGHT = 0.0254 * 3
+RIM_HEIGHT = 0.0254 * 2.25
+
 
 class CheckerboardCalibrator:
     def __init__(self):
@@ -66,14 +69,17 @@ class CheckerboardCalibrator:
         self.R_world_wrt_cam = None
         self.x_world_wrt_cam = None
 
-    def calibrate_checkboard(self, image):
+
+    def calibrate_checkerboard(self, image, display_image):
         # Test for the presense of a checkerboard and pull out the
         # corners as a list of (u,v) data.
-        gray = self.calibrator.mkgray(image)
+        #gray = self.calibrator.mkgray(image)
+        # Grayscale the image
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         (ok, corners, board) = self.calibrator.get_corners(gray)
         if not ok:
-            print("No matching checkboard...")
-            return
+            print("No matching checkerboard...")
+            return [], [], display_image
         corners = corners.reshape(-1,2)
 
         # Set the (X,Y,Z) data for each corner.  This presumes the
@@ -82,6 +88,7 @@ class CheckerboardCalibrator:
         ## x = 82.5, y = -28.9
         ## X_CENTER = 0.834
         ## Y_CENTER = -0.331
+
         # 03/04 measurements
         X_CENTER = 0.8285
         Y_CENTER = -0.3165
@@ -99,8 +106,8 @@ class CheckerboardCalibrator:
         Hand measured
         checkerboard, 0.7735 + 0.055 = 0.8285, 0.3165
         18, 0.727 + 0.055 = 0.7814, -0.085
-        12 0.2395 + 0.055, -0.192
-        42 0.148 + 0.055,0.318
+        12 0.2395 + 0.055 = 0.2945, 0.192
+        42 0.148 + 0.055 = 0.203,-0.318
         """
 
         xyz = np.zeros((len(corners), 3))
@@ -111,12 +118,68 @@ class CheckerboardCalibrator:
                 xyz[i][1] = board.dim * ((board.n_rows-1)/2.0 - r) + Y_CENTER
                 xyz[i][2] = 0
 
-        # Really these are lists of (u,v) and (x,y,z)
-        self.locate_camera(xyz, corners)
+        display_image = cv2.drawChessboardCorners(
+            image,
+            (self.board.n_cols, self.board.n_rows),
+            corners,
+            patternWasFound=True
+        )
 
-    def calibrate_charucoboard(self, ros_image):
-        # Convert into OpenCV image.
-        image = self.bridge.imgmsg_to_cv2(ros_image, "bgr8")
+        # Really these are lists of (u,v) and (x,y,z)
+        return xyz, corners, display_image
+
+
+    def calibrate_aruco_cv(self, image, display_image):
+        # aruco variables
+        ARUCO_DICT = aruco.Dictionary_get(aruco.DICT_4X4_50)
+        MARKER_LENGTH = 0.152
+        TOP_RIGHT_CORNER_IND = 1
+        """
+        Hand measured
+        18, 0.727 + 0.055 = 0.7814, -0.085
+        12 0.2395 + 0.055 = 0.2945, 0.192
+        42 0.148 + 0.055 = 0.203,-0.318
+        """
+        #  Location of top right corner
+        XYZ_BY_ID = {
+            18: (0.791, -0.085, 0),
+            12: (0.2945, 0.192, 0),
+            42: (0.203, -0.318, 0)
+        }
+
+        # Grayscale the image
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+        # Find aruco markers in the query image, top left corner
+        corners, ids, _ = aruco.detectMarkers(
+                image=gray,
+                dictionary=ARUCO_DICT)
+        
+        verified_corners = []
+        verified_xyz = []
+        if ids is None:
+            print("No aruco markers found")
+            return [], [], display_image
+        for i, aruco_id in enumerate(ids.flatten()):
+            if aruco_id in XYZ_BY_ID:
+                # corners matrix is [aruco marker][0][corner][x,y]]
+                verified_corners.append(corners[i][0][TOP_RIGHT_CORNER_IND].flatten())
+                verified_xyz.append(XYZ_BY_ID[aruco_id])
+
+        # convert to numpy
+        verified_corners = np.array(verified_corners)
+        verified_xyz = np.array(verified_xyz)
+
+        # Outline the aruco markers found in our query image
+        display_image = aruco.drawDetectedMarkers(
+                image=display_image,
+                corners=corners,
+                ids=ids)
+
+        return verified_xyz, verified_corners, display_image
+
+
+    def calibrate_charucoboard(self, image, display_image):
 
         # ChAruco board variables
         CHARUCOBOARD_ROWCOUNT = 5
@@ -151,8 +214,8 @@ class CheckerboardCalibrator:
                 dictionary=ARUCO_DICT)
 
         # Outline the aruco markers found in our query image
-        image = aruco.drawDetectedMarkers(
-                image=image,
+        display_image = aruco.drawDetectedMarkers(
+                image=display_image,
                 corners=corners)
 
         # Get charuco corners and ids from detected aruco markers
@@ -170,26 +233,44 @@ class CheckerboardCalibrator:
             ids_all.append(charuco_ids)
 
             # Draw the Charuco board we've detected to show our calibrator the board was properly detected
-            image = aruco.drawDetectedCornersCharuco(
-                    image=image,
+            display_image = aruco.drawDetectedCornersCharuco(
+                    image=display_image,
                     charucoCorners=charuco_corners,
                     charucoIds=charuco_ids)
 
-            # If our image size is unknown, set it now
-            if not image_size:
-                image_size = gray.shape[::-1]
-
-            # Reproportion the image, maxing width or height at 1000
-            # proportion = max(img.shape) / 1000.0
-            # img = cv2.resize(img, (int(img.shape[1]/proportion), int(img.shape[0]/proportion)))
-            # # Pause to display each image, waiting for key press
-            #cv2.imshow('Charuco board', img)
-            #cv2.waitKey(0)
-            return image
+            return [], corners_all, display_image
 
         else:
             print("Not able to detect a charuco board in image")
-            return None
+            return [], [], display_image
+
+
+    def calibrate_all(self, ros_image, set_params=True):
+        # Convert into OpenCV image.
+        image = self.bridge.imgmsg_to_cv2(ros_image, "bgr8")
+        display_image = image.copy()
+        xyz_list = []
+        corners_list = []
+
+        calibration_funcs = [
+            self.calibrate_checkerboard,
+            self.calibrate_aruco_cv
+        ]
+        for calibration_func in calibration_funcs:
+            xyz, corners, display_image = calibration_func(image, display_image)
+            xyz_list.extend(xyz)
+            corners_list.extend(corners)
+
+        # Convert to np
+        xyz_list = np.array(xyz_list)
+        corners_list = np.array(corners_list)
+        
+        if set_params:
+            print(xyz_list)
+            print(corners_list)
+            self.locate_camera(xyz_list, corners_list)
+
+        return display_image
 
 
     #
@@ -212,10 +293,22 @@ class CheckerboardCalibrator:
         # Convert into the camera frame w.r.t. world.
         self.R_cam_wrt_world = self.R_world_wrt_cam.transpose()
         self.x_cam_wrt_world = - np.matmul(self.R_cam_wrt_world, self.x_world_wrt_cam)
+        print("actual", self.x_cam_wrt_world)
+        #self.x_cam_wrt_world = np.array([[2], [-0.125], [1.18]])
+
+        """
+        Hand measured
+        checkerboard, 0.7735 + 0.055 = 0.8285, 0.3165
+        18, 0.727 + 0.055 = 0.7814, -0.085
+        12 0.2395 + 0.055 = 0.2945, 0.192
+        42 0.148 + 0.055 = 0.203,-0.318
+        """
 
         # Report.
-        print("r cam wrt world", self.R_cam_wrt_world)
-        print("Cam loc (relative to center of board): %6.3f, %6.3f, %6.3f" 
+        print("r cam wrt world")
+        print(self.R_cam_wrt_world)
+        print("cam loc should be:", [1.335, 0.125, 1.18])
+        print("Cam loc (x, y, z relative to 0,0,0): %6.3f, %6.3f, %6.3f" 
               % tuple(self.x_cam_wrt_world.reshape(3)))
 
         self.check_calibration(corners)
@@ -225,7 +318,7 @@ class CheckerboardCalibrator:
     #
     #   Compute the normalized (image) coordinates from the pixels
     #
-    def undistort(self, uv):
+    def undistort(self, uv, obj_height=0.0):
         # Map to the normalized (image) coordinates.  As above, the API
         # assume a set of lists of points, so reshape accordingly.
         #print(uv.reshape(1,-1,2), uv.reshape(1,-1,2).shape)
@@ -241,42 +334,50 @@ class CheckerboardCalibrator:
         xw = lam*(Rc[0][0]*xybar[0] + Rc[0][1]*xybar[1] + Rc[0][2]) + xc[0]
         yw = lam*(Rc[1][0]*xybar[0] + Rc[1][1]*xybar[1] + Rc[1][2]) + xc[1]
 
-        BOTTLE_HEIGHT = 0.2
+        # Adjust for the height of the object
         cam_height = self.x_cam_wrt_world[2]
-        factor = BOTTLE_HEIGHT / cam_height
-        bottle_to_cam_xy = (
+        factor = obj_height / cam_height
+        obj_to_cam_xy = (
             self.x_cam_wrt_world[0] - xw,
             self.x_cam_wrt_world[1] - yw
         )
-        xw += bottle_to_cam_xy[0] * factor
-        yw += bottle_to_cam_xy[1] * factor
+        xw += obj_to_cam_xy[0] * factor
+        yw += obj_to_cam_xy[1] * factor
 
+        # hacky x axis correction for bloating
+        xw += 0.03 / max(1, (xw - 0.10) * 100) + 0.005
         return (xw, yw)
 
+    def undistort_cap(self, uv):
+        return self.undistort(uv, CAP_HEIGHT)
+
+    def undistort_band(self, uv):
+        return self.undistort(uv, BAND_HEIGHT)
+
+    def undistort_rim(self, uv):
+        return self.undistort(uv, RIM_HEIGHT)
 
     def check_calibration(self, corners):
         # Pick a (u,v) pair.  I used the top-left corner for
         # testing, which is (-3.5, 2.5) * 0.0254 * 29 / 32
         uv = corners[0]
         xw, yw = self.undistort(uv)
+        X_CENTER = 0.8285
+        Y_CENTER = -0.3165
         # Check the location in number of squares...
-        n_x = xw / self.board.dim
-        n_y = yw / self.board.dim
-        print('location of top left corner in number of squares', [n_x, n_y])
+        n_x = (xw - X_CENTER) / self.board.dim
+        n_y = (yw - Y_CENTER) / self.board.dim
+        print('location of top left corner in number of squares', [n_x, n_y],
+              'we expect -1.5 and 1')
 
 
 #
 #  Detector Node Class
 #
+
 class Detector:
 
-
     def __init__(self):
-        self.cap_height = 0.16
-        self.band_height = 0.075
-        # Instantiate a cascade detector.
-        self.detector = None#cv2.CascadeClassifier(XMLfile)
-
         # Instantiate a calibrator
         self.checkCalibrator = CheckerboardCalibrator()
 
@@ -289,12 +390,14 @@ class Detector:
         source_topic = rospy.resolve_name("/cam_feed/image_rect_color")
         output_topic = rospy.resolve_name("~image")
         calibration_topic = rospy.resolve_name("~calibration_image")
+        debug_topic = rospy.resolve_name("~debug_image")
         activation_topic = rospy.resolve_name("/activation")
         cap_output_topic = rospy.resolve_name("/bottle_cap_dets")
         band_output_topic = rospy.resolve_name("/bottle_band_det")
+        rim_output_topic = rospy.resolve_name("/bottle_rim_det")
 
         first_image = rospy.wait_for_message(source_topic, Image)
-        self.checkCalibrator.calibrate_checkboard(first_image)
+        self.checkCalibrator.calibrate_all(first_image)
 
         # Subscribe to the source topic.  Using a queue size of one
         # means only the most recent message is stored for the next
@@ -320,8 +423,16 @@ class Detector:
         # Publish to the band output topic:
         self.band_publisher = rospy.Publisher(band_output_topic,Detection,queue_size=1)
 
+        # Publish to the rim output topic:
+        self.rim_publisher = rospy.Publisher(rim_output_topic,Detection,queue_size=1)
+
         # Publish to the calibration topic.
         self.calibration_publisher = rospy.Publisher(calibration_topic,
+                                         sensor_msgs.msg.Image,
+                                         queue_size=1)
+
+        # Publish to the debug topic.
+        self.debug_publisher = rospy.Publisher(debug_topic,
                                          sensor_msgs.msg.Image,
                                          queue_size=1)
 
@@ -333,32 +444,56 @@ class Detector:
 
 
     def test_calibration(self, ros_image):
-        calibration_image = self.checkCalibrator.calibrate_charucoboard(ros_image)
-        print(type(calibration_image))
+        #calibration_image = self.checkCalibrator.calibrate_charucoboard(ros_image)
+        calibration_image = self.checkCalibrator.calibrate_all(ros_image, set_params=False)
         self.calibration_publisher.publish(
             self.bridge.cv2_to_imgmsg(calibration_image, "bgr8"))
 
-    def detect(self, image, color, tols, min_size):
-
+    def detect(self, image, color, tols, min_size, max_size, show_mask=False):
         lower = (color[0] - tols[0], color[1] - tols[1], color[2] - tols[2])
         upper = (color[0] + tols[0], color[1] + tols[1], color[2] + tols[2])
 
         mask = cv2.inRange(image, lower, upper)
+        # use adaptive thresholding for saturation
+        blur_v = cv2.GaussianBlur(image[:, :, 1],(3, 3),0)
+        #blur_v = image[:, :, 1]
+        ret, th = cv2.threshold(blur_v, 255, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+        mask = np.minimum(mask, th)
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        if show_mask:
+            ms = mask.shape
+            mask[:, ms[1]/2:(ms[1]/2+2)] = 255
+            mask[ms[0]/2:(ms[0]/2+2),:] = 255
+
+            v_image = image[:,:,2]
+            # Otsu's thresholding
+            ret2,th2 = cv2.threshold(v_image,255,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+
+            # Otsu's thresholding after Gaussian filtering
+            blur = cv2.GaussianBlur(v_image,(3, 3),0)
+            ret3,th3 = cv2.threshold(blur,255,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+
+            print(image[ms[0]/2 - 2:ms[0]/2+2, ms[1]/2 - 2:ms[1]/2+2])
+            #print(v_image[ms[0]/2 - 2:ms[0]/2+2, ms[1]/2 - 2:ms[1]/2+2])
+            print("contour areas:", sorted([cv2.contourArea(c) for c in contours], reverse=True))
+            
+            #self.debug_publisher.publish(self.bridge.cv2_to_imgmsg(mask, '8UC1'))
+            self.debug_publisher.publish(self.bridge.cv2_to_imgmsg(mask, '8UC1'))
         try:
-            blob = max(contours, key=lambda el: cv2.contourArea(el))
-            if cv2.contourArea(blob) > min_size:
-                M = cv2.moments(blob)
-                center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
-                return mask, center, M
-            else:
-                return mask, None, None
+            #blob = max(contours, key=lambda el: cv2.contourArea(el))
+            # try all blobs since we have a size range
+            for blob in contours:
+                if cv2.contourArea(blob) > min_size and cv2.contourArea(blob) < max_size:
+                    M = cv2.moments(blob)
+                    center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+                    return mask, center, M
+            return mask, None, None
 
         except ValueError:
             return mask, None, None
 
     def process(self, ros_image):
-        #self.test_calibration(ros_image)
+        self.test_calibration(ros_image)
         # Convert into OpenCV image.
         cv_img = self.bridge.imgmsg_to_cv2(ros_image, "bgr8")
 
@@ -441,9 +576,9 @@ class Detector:
             uv = np.array((center))
             xw, yw = self.checkCalibrator.undistort(uv)
             if detection_type == "cap":
-                zw = self.cap_height
+                zw = CAP_HEIGHT
             elif detection_type == "band":
-                zw = self.band_height
+                zw = BAND_HEIGHT
             detection_msg = Detection()
             detection_msg.position = Vector3()
             detection_msg.position.x = xw
@@ -458,7 +593,7 @@ class Detector:
 
         on_picked_color = (155 / 2, 53 * 2.55, 48 * 2.55)
         on_tols = (10, 40, 40)
-        on_mask, on_center, _ = self.detect(hsv_img, on_picked_color, on_tols, 100)
+        on_mask, on_center, _ = self.detect(hsv_img, on_picked_color, on_tols, 100, 5000)
 
         active_msg = Activation()
         if on_center is None:
@@ -470,33 +605,63 @@ class Detector:
 
 
         #cap_picked_color = (200.0 / 2, 75 * 2.55, 55 * 2.55) # old values
-        cap_picked_color = (185.0 / 2, 75 * 2.55, 55 * 2.55)
-        cap_tols = (10, 60, 30)
-        cap_mask, cap_center, _ = self.detect(hsv_img, cap_picked_color, cap_tols, 50)
+        # current green: cap_picked_color = (185.0 / 2, 55 * 2.55, 55 * 2.55)
+        # current green: cap_tols = (10, 60, 30)
+        # hot orange
+        cap_picked_color = (97, 160, 130)
+        cap_tols = (5, 255, 20)
+        
+        cap_mask, cap_center, _ = self.detect(
+            hsv_img, cap_picked_color, cap_tols, 90, 600,
+            show_mask=False)
 
-        band_picked_color = (210 / 2, 85 * 2.55, 50 * 2.55)
-        band_tols = (10,40,40)
-        band_mask, band_center, band_moments = self.detect(hsv_img, band_picked_color, band_tols, 100)
+        # old blue
+        # band_picked_color = (210 / 2, 85 * 2.55, 50 * 2.55)
+        # band_tols = (10,40,40)
+        # hot pink
+        band_picked_color = (165, 140, 130)
+        band_tols = (10, 255, 40)
+        band_mask, band_center, band_moments = self.detect(
+            hsv_img, band_picked_color, band_tols, 200, 1500,
+            show_mask=False)
 
-        #self.calibration_publisher.publish(self.bridge.cv2_to_imgmsg(mask, '8UC1'))
+        rim_picked_color = (165, 140, 130)
+        rim_tols = (10, 255, 40)
+        rim_mask, rim_center, rim_moments = self.detect(
+            hsv_img, rim_picked_color, rim_tols, 10, 100,
+            show_mask=False)
+
+        """
+        Other colors:
+            hot pink: 165, 177 (160-180), 142 ( 120-150)
+                cap_picked_color = (165, 140, 142)
+                cap_tols = (10, 255, 40)
+            hot orange: 16, 177 ( 170- 195), 163 (145 - 170)
+
+                cap_picked_color = (16, 160, 160)
+                cap_tols = (5, 255, 25)
+            deep light green 82, 89 ( 75-95), 130 ( 110 - 130)
+            light dark green: 82, 155 ( 130-160), 103 ( 90 - 110)
+        """
 
         if cap_center is not None:
             cv2.circle(cv_img, cap_center, 2, (0, 0, 255), -1)
             uv = np.array((cap_center))
-            xw, yw = self.checkCalibrator.undistort(uv)
-            zw=self.cap_height
+            xw, yw = self.checkCalibrator.undistort_cap(uv)
+            # actually 0.2, but we lower it for the sake of the robot
+            zw=CAP_HEIGHT - 0.04
             detection_msg = Detection()
             detection_msg.position = Vector3()
             detection_msg.position.x = xw
             detection_msg.position.y = yw
             detection_msg.position.z = zw
-            print('band x, y, z:', xw[0], yw[0], zw)
+            print('cap x, y, z:', xw[0], yw[0], zw)
             self.cap_publisher.publish(detection_msg)
-        elif band_center is not None:
+        if band_center is not None:
             cv2.circle(cv_img, band_center, 2, (0,0,255), -1)
             uv = np.array((band_center))
-            xw, yw = self.checkCalibrator.undistort(uv)
-            zw=self.band_height
+            xw, yw = self.checkCalibrator.undistort_band(uv)
+            zw=BAND_HEIGHT
             detection_msg = Detection()
             detection_msg.position = Vector3()
             detection_msg.position.x = xw
@@ -504,6 +669,18 @@ class Detector:
             detection_msg.position.z = zw
             print('band x, y, z:', xw[0], yw[0], zw)
             self.band_publisher.publish(detection_msg)
+        if rim_center is not None:
+            cv2.circle(cv_img, rim_center, 2, (0,0,255), -1)
+            uv = np.array((rim_center))
+            xw, yw = self.checkCalibrator.undistort_rim(uv)
+            zw=RIM_HEIGHT
+            detection_msg = Detection()
+            detection_msg.position = Vector3()
+            detection_msg.position.x = xw
+            detection_msg.position.y = yw
+            detection_msg.position.z = zw
+            print('rim x, y, z:', xw[0], yw[0], zw)
+            self.rim_publisher.publish(detection_msg)
 
         #if M is not None:
         #    center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
