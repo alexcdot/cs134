@@ -18,7 +18,8 @@ enum class ArmControllerState {
     MOVING_POINT,
     FLOATING,
     WINDUP,
-    THROW
+    THROW,
+    PAUSE
 };
 
 struct PosVelPair {
@@ -39,6 +40,7 @@ class ArmController {
     
     Vector6d requested_throw_pos_;
     Vector6d requested_throw_vel_;
+    Vector6d requested_pause_pos_;
 
     SplineManager spline_managers_[6];
     Kinematics kinematics_;

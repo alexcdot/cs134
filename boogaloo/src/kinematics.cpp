@@ -208,6 +208,7 @@ sensor_msgs::JointState Kinematics::jointsToJS(Vector6d joint_pos, Vector6d join
         msg.velocity.push_back(joint_vel(i));
         msg.effort.push_back(joint_torque(i));
     }
+    msg.header.stamp = ros::Time::now();
     msg.header.frame_id = "world";
     return msg;
 }
@@ -236,9 +237,9 @@ sensor_msgs::JointState Kinematics::toHebi(sensor_msgs::JointState normal_joints
     }
     hebi_joints.header = normal_joints.header;
 
-    // if (hebi_joints.effort[ELBOW] < 0) {
-    //     hebi_joints.position[ELBOW] += 0.10;
-    // }
+    if (hebi_joints.effort[ELBOW] < 0) {
+        hebi_joints.position[ELBOW] -= 0.10;
+    }
 
     return hebi_joints;
 }
@@ -246,9 +247,9 @@ sensor_msgs::JointState Kinematics::toHebi(sensor_msgs::JointState normal_joints
 sensor_msgs::JointState Kinematics::fromHebi(sensor_msgs::JointState hebi_joints) {
     sensor_msgs::JointState normal_joints;
 
-    // if (hebi_joints.effort[ELBOW] < 0) {
-    //     hebi_joints.position[ELBOW] -= 0.10;
-    // }
+    if (hebi_joints.effort[ELBOW] < 0) {
+        hebi_joints.position[ELBOW] += 0.10;
+    }
 
     for (int i = 0; i < 6; i++) {
         normal_joints.name.push_back(hebi_joints.name[i]);

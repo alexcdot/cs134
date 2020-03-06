@@ -6,6 +6,7 @@ roscore
 rosrun usb_cam usb_cam_node __name:=cam_feed _pixel_format:=yuyv _camera_name:=logitech_cam _image_width:=640 _image_height:=480
 
 rosrun camera_calibration cameracalibrator.py --size 8x6 --square 0.0231 image:=/cam_feed/image_raw camera:=/cam_feed
+rosrun camera_calibration cameracalibrator.py --size 4x3 --square 0.047625 image:=/cam_feed/image_raw camera:=/cam_feed
 ```
 
 Then, to run the detector node:
