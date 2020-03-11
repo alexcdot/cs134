@@ -23,4 +23,12 @@
     <node pkg="boogaloo" type="pydetectobject.py" name="detector" output="screen">
     </node>
 
+    <node name="image_compressor_image" type="republish" pkg="image_transport"
+        args="raw in:=/detector/image compressed out:=/detector/image">
+    </node>
+
+    <node name="image_compressor_calibration_image" type="republish" pkg="image_transport"
+        args="raw in:=/detector/calibration_image compressed out:=/detector/calibration_image">
+    </node>
+
 </launch>

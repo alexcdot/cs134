@@ -16,8 +16,6 @@ ArmController::ArmController() {
         "/robot_state", 10
     );
 
-    start_time_ = ros::Time::now();
-
     // Get initial position
     sensor_msgs::JointState::ConstPtr msgptr;
     msgptr = ros::topic::waitForMessage<sensor_msgs::JointState>(
@@ -28,6 +26,8 @@ ArmController::ArmController() {
         exit(1);
     }
     this->processFeedback(msgptr);
+
+    start_time_ = ros::Time::now();
 
     FKinResult initial_pose = kinematics_.runForwardKinematics(feedback_joint_pos_);
     
@@ -337,7 +337,7 @@ void ArmController::setSplinesPose(Vector6d start_pos, Vector6d start_vel, Vecto
 
 void ArmController::setSplinesJoint(Vector6d start_pos, Vector6d start_vel, Vector6d goal_pos, ros::Time t_start) {
     double biggest_turn = (start_pos - goal_pos).cwiseAbs().maxCoeff();
-    double avg_rot_speed = 2.0;
+    double avg_rot_speed = 1.5;
     ros::Duration move_dur = ros::Duration(max(2.0, biggest_turn / avg_rot_speed));
     for (int i = 0; i < 6; i++) {
         spline_managers_[i].setSpline(start_pos(i), start_vel(i), goal_pos(i), 0.0, t_start, move_dur);

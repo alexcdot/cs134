@@ -36,6 +36,11 @@ detections = {
     RIM_DET: None,
     BAND_DET: None
 }
+det_history = {
+    CAP_DET: [],
+    RIM_DET: [],
+    BAND_DET: []
+}
 # Whether or not we want new dets
 want_detections = {
     CAP_DET: False,
@@ -43,11 +48,16 @@ want_detections = {
     BAND_DET: False
 }
 
-# Publishers for the 
+# Publishers
 joint_pub = None
 tip_pub = None
 throw_pub = None
 mass_pub = None
+
+# Global commands
+g_joint_cmd = JointCommand()
+g_tip_cmd = PoseCommand()
+g_mass_cmd = MassChange()
 
 # Lock to make this code effectively single-threaded to avoid bugs
 lock = Lock()
@@ -77,21 +87,47 @@ def robot_state_callback(data):
     with lock:
         curr_state = data
 
+def hist_mean(hist):
+    np_hist = np.array([toNpVec(vec) for vec in hist])
+    return toRosVec(np.mean(np_hist, axis=0))
+
+def hist_stddev(hist):
+    np_hist = np.array([toNpVec(vec) for vec in hist])
+    return np.max(np.std(np_hist, axis=0))
+
 # Callback to get new dets. Only saves when we want the det
 def detection_callback(data, det_type):
-    global detections
+    global detections, det_history
+    det_history[det_type] = det_history[det_type][-20:] + [data.position]
+    if (not want_detections[det_type]):
+        det_history[det_type] = []
     with lock:
-        if want_detections[det_type]:
-            detections[det_type] = data.position
+        if want_detections[det_type] and len(det_history[det_type]) >= 15 and hist_stddev(det_history[det_type]) < 0.005:
+            detections[det_type] = hist_mean(det_history[det_type])
 
 # Go to home, empty mass value
 def startup():
-    global joint_pub, mass_pub, active_state
-    joint_msg = JointCommand()
-    mass_msg = MassChange()
-    publish_msg(joint_pub, joint_msg)
-    publish_msg(mass_pub, mass_msg)
-    active_state = wait_bottle_dets
+    global joint_pub, tip_pub, mass_pub, active_state, multi_step
+    
+    
+
+    if multi_step == 0:
+        mass_msg = MassChange()
+        publish_msg(mass_pub, mass_msg)
+
+        tip_cmd = PoseCommand()
+        tip_cmd.pose_follow = True
+        tip_cmd.pos = deepcopy(curr_state.pos)
+        tip_cmd.pos.z += 0.3
+        publish_msg(tip_pub, tip_cmd)
+
+        multi_step += 1
+
+    elif multi_step == 1:
+        joint_msg = JointCommand()
+        publish_msg(joint_pub, joint_msg)
+        active_state = wait_bottle_dets
+        multi_step = 0
 
 # Wait for a grabbable detection
 def wait_bottle_dets():
@@ -118,62 +154,51 @@ def wait_bottle_dets():
 
 # Pick up a bottle by the cap
 def grab_bottle_cap():
-    global detections, tip_pub, mass_pub, multi_step, active_state
-
-    pose_msg = PoseCommand()
-    pose_msg.pose_follow = True
+    global detections, tip_pub, mass_pub, multi_step, active_state, g_tip_cmd, g_mass_cmd
 
     detections[CAP_DET].z = 0.18
 
-    mass_msg = MassChange()
+    if math.sqrt(detections[CAP_DET].x**2 + detections[CAP_DET].y**2) < 0.75:
+        detections[CAP_DET].z -= 0.02
 
     print('Grabbing by cap: Stage', multi_step)
 
     if multi_step == 0:
-        pose_msg.pos = deepcopy(detections[CAP_DET])
-        pose_msg.pos.z += 0.05
-        mass_msg.mass_status = mass_msg.EMPTY
+        g_tip_cmd = PoseCommand()
+        g_tip_cmd.pose_follow = True
+        g_tip_cmd.pos = deepcopy(detections[CAP_DET])
+        g_tip_cmd.pos.z += 0.05
+
+        g_mass_cmd = MassChange()
+        g_mass_cmd.mass_status = g_mass_cmd.EMPTY
         multi_step += 1
 
     elif multi_step == 1:
-        pose_msg.pos = deepcopy(detections[CAP_DET])
-        mass_msg.mass_status = mass_msg.EMPTY
+        g_tip_cmd.pos = deepcopy(detections[CAP_DET])
         multi_step += 1
 
     elif multi_step == 2:
-        pose_msg.pos = deepcopy(detections[CAP_DET])
-        pose_msg.gripper = 1
-        pose_msg.wrist_roll = 3.14
-        mass_msg.mass_status = mass_msg.EMPTY
+        g_tip_cmd.gripper = 1
+        g_tip_cmd.wrist_roll = 3.14
         multi_step += 1
 
     elif multi_step == 3:
-        pose_msg.pos = deepcopy(detections[CAP_DET])
-        pose_msg.gripper = 1
-        pose_msg.wrist_roll = 3.14
-        mass_msg.mass_status = mass_msg.BOTTLE_TOP
+        g_mass_cmd.mass_status = g_mass_cmd.BOTTLE_TOP
         multi_step += 1
 
     elif multi_step == 4:
-        pose_msg.pos = deepcopy(detections[CAP_DET])
-        pose_msg.pos.z += 0.10
-        pose_msg.gripper = 1
-        mass_msg.mass_status = mass_msg.BOTTLE_TOP
+        g_tip_cmd.pos.z += 0.10
+        g_tip_cmd.wrist_roll = 0
         multi_step = 0
         detections[CAP_DET] = None
         active_state = return_home
 
-    publish_msg(tip_pub, pose_msg)
-    publish_msg(mass_pub, mass_msg)
+    publish_msg(tip_pub, g_tip_cmd)
+    publish_msg(mass_pub, g_mass_cmd)
 
 
 def upright_bottle():
-    global detections, tip_pub, mass_pub, multi_step, active_state
-
-    pose_msg = PoseCommand()
-    pose_msg.pose_follow = True
-
-    mass_msg = MassChange()
+    global detections, tip_pub, mass_pub, multi_step, active_state, g_tip_cmd, g_mass_cmd
 
     band = toNpVec(detections[BAND_DET])
     rim = toNpVec(detections[RIM_DET])
@@ -189,102 +214,60 @@ def upright_bottle():
     print('Uprighting bottle at angle', angle, ': Stage', multi_step)
 
     if multi_step == 0:
-        pose_msg.pos = deepcopy(grab_vec)
-        pose_msg.pos.z += 0.1
-        pose_msg.wrist_roll = angle
-        mass_msg.mass_status = mass_msg.EMPTY
+        g_tip_cmd = PoseCommand()
+        g_tip_cmd.pose_follow = True
+        g_tip_cmd.pos = deepcopy(grab_vec)
+        g_tip_cmd.pos.z += 0.1
+        g_tip_cmd.wrist_roll = angle
+
+        g_mass_cmd = MassChange()
+        g_mass_cmd.mass_status = g_mass_cmd.EMPTY
         multi_step += 1
 
     elif multi_step == 1:
-        pose_msg.pos = deepcopy(grab_vec)
-        pose_msg.wrist_roll = angle
-        mass_msg.mass_status = mass_msg.EMPTY
+        g_tip_cmd.pos.z -= 0.1
         multi_step += 1
 
     elif multi_step == 2:
-        pose_msg.pos = deepcopy(grab_vec)
-        pose_msg.wrist_roll = angle
-        pose_msg.gripper = 1
-        mass_msg.mass_status = mass_msg.EMPTY
+        g_tip_cmd.gripper = 1
         multi_step += 1
 
     elif multi_step == 3:
-        pose_msg.pos = deepcopy(grab_vec)
-        pose_msg.wrist_roll = angle
-        pose_msg.gripper = 1
-        mass_msg.mass_status = mass_msg.BOTTLE_SIDE
+        g_mass_cmd.mass_status = g_mass_cmd.BOTTLE_SIDE
         multi_step += 1
 
     elif multi_step == 4:
-        pose_msg.pos = deepcopy(grab_vec)
-        pose_msg.pos.z += 0.2
-        pose_msg.pos.y = 0
-        pose_msg.pos.x = 0.8
-        pose_msg.wrist_roll = angle
-        pose_msg.gripper = 1
-        mass_msg.mass_status = mass_msg.BOTTLE_SIDE
+        g_tip_cmd.pos.z += 0.2
+        g_tip_cmd.pos.y = 0
+        g_tip_cmd.pos.x = 0.8
         multi_step += 1
 
     elif multi_step == 5:
-        pose_msg.pos = deepcopy(grab_vec)
-        pose_msg.pos.z += 0.2
-        pose_msg.pos.y = 0
-        pose_msg.pos.x = 0.8
-        pose_msg.wrist_roll = 0
-        pose_msg.wrist_angle = 1.57
-        pose_msg.gripper = 1
-        mass_msg.mass_status = mass_msg.BOTTLE_SIDE
+        g_tip_cmd.wrist_roll = 0
+        g_tip_cmd.wrist_angle = 1.57
         multi_step += 1
 
     elif multi_step == 6:
-        pose_msg.pos = deepcopy(grab_vec)
-        pose_msg.pos.z += 0.05
-        pose_msg.pos.y = 0
-        pose_msg.pos.x = 0.8
-        pose_msg.wrist_roll = 0
-        pose_msg.wrist_angle = 1.57
-        pose_msg.gripper = 1
-        mass_msg.mass_status = mass_msg.BOTTLE_SIDE
-        multi_step += 1
-
-    elif multi_step == 6:
-        pose_msg.pos = deepcopy(grab_vec)
-        pose_msg.pos.z += 0.05
-        pose_msg.pos.y = 0
-        pose_msg.pos.x = 0.8
-        pose_msg.wrist_roll = 0
-        pose_msg.wrist_angle = 1.57
-        pose_msg.gripper = 1
-        mass_msg.mass_status = mass_msg.EMPTY
+        g_tip_cmd.pos.z -= 0.15
         multi_step += 1
 
     elif multi_step == 7:
-        pose_msg.pos = deepcopy(grab_vec)
-        pose_msg.pos.z += 0.05
-        pose_msg.pos.y = 0
-        pose_msg.pos.x = 0.8
-        pose_msg.wrist_roll = 0
-        pose_msg.wrist_angle = 1.57
-        pose_msg.gripper = 0
-        mass_msg.mass_status = mass_msg.EMPTY
+        g_mass_cmd.mass_status = g_mass_cmd.EMPTY
         multi_step += 1
 
     elif multi_step == 8:
-        pose_msg.pos = deepcopy(grab_vec)
-        pose_msg.pos.z += 0.3
-        pose_msg.pos.y = 0
-        pose_msg.pos.x = 0.8
-        pose_msg.wrist_roll = 0
-        pose_msg.wrist_angle = 1.57
-        pose_msg.gripper = 0
-        mass_msg.mass_status = mass_msg.EMPTY
+        g_tip_cmd.gripper = 0
+        multi_step += 1
+
+    elif multi_step == 9:
+        g_tip_cmd.pos.z += 0.25
         detections[BAND_DET] = None
         detections[RIM_DET] = None
         active_state = wait_bottle_dets
         multi_step = 0
 
-    publish_msg(tip_pub, pose_msg)
-    publish_msg(mass_pub, mass_msg)
+    publish_msg(tip_pub, g_tip_cmd)
+    publish_msg(mass_pub, g_mass_cmd)
 
 
 def return_home():
@@ -308,9 +291,9 @@ def throw_bottle():
     throw_cmd.elbow_ang = 1.57
     throw_cmd.wrist_ang = 1.7
     throw_cmd.elbow_vel = 4.0
-    throw_cmd.wrist_vel = 6.0
-    throw_cmd.elbow_rest = 1.57
-    throw_cmd.wrist_rest = 1.5
+    throw_cmd.wrist_vel = 6.5
+    throw_cmd.elbow_rest = 1.4
+    throw_cmd.wrist_rest = 1.0
     publish_msg(throw_pub, throw_cmd)
     active_state = wait_bottle_dets
 
@@ -330,11 +313,54 @@ def main_loop(timer_event):
         else:
             pass
 
+def do_nothing():
+    pass
+
+def shutdown():
+    global active_state, tip_pub, mass_pub, g_tip_cmd
+
+    print("Killed! Starting shutdown sequence...")
+    active_state = do_nothing
+
+    mass_cmd = MassChange()
+    publish_msg(mass_pub, mass_cmd)
+
+    g_tip_cmd = PoseCommand()
+    g_tip_cmd.pose_follow = True
+    g_tip_cmd.pos = deepcopy(curr_state.pos)
+    g_tip_cmd.pos.z += 0.1
+
+    publish_msg(tip_pub, g_tip_cmd)
+    ros.sleep(ros.Duration(0.2))
+    while(not curr_state.is_at_target):
+        ros.sleep(ros.Duration(0.1))
+
+    g_tip_cmd.pose_follow = False
+    g_tip_cmd.pos.x = -0.11
+    g_tip_cmd.pos.y = 0.45
+    g_tip_cmd.pos.z = 0.1
+
+    publish_msg(tip_pub, g_tip_cmd)
+    ros.sleep(ros.Duration(0.2))
+    while(not curr_state.is_at_target):
+        ros.sleep(ros.Duration(0.1))
+
+    g_tip_cmd.pose_follow = True
+    g_tip_cmd.pos.z = -0.09
+
+    publish_msg(tip_pub, g_tip_cmd)
+    ros.sleep(ros.Duration(0.2))
+    while(not curr_state.is_at_target):
+        ros.sleep(ros.Duration(0.1))
+
+    print("Shutdown complete!")
+
 # Initialize and first time setup
 def main():
     global joint_pub, tip_pub, throw_pub, mass_pub, curr_state, active_state, last_msg_time
 
     ros.init_node('logic_controller')
+    ros.on_shutdown(shutdown)
 
     # Init subscribers
     ros.Subscriber("/robot_state", RobotState, robot_state_callback)

@@ -24,6 +24,8 @@ from sensor_msgs.msg import CameraInfo
 from camera_calibration.calibrator import ChessboardInfo
 from camera_calibration.calibrator import Calibrator
 from cv2 import aruco
+from joblib import load
+from sklearn.tree import DecisionTreeClassifier
 
 import rospkg
 import os
@@ -396,6 +398,12 @@ class Detector:
         band_output_topic = rospy.resolve_name("/bottle_band_det")
         rim_output_topic = rospy.resolve_name("/bottle_rim_det")
 
+        this_file_dir = os.path.dirname(os.path.abspath(__file__))
+        ASSETS_PATH = os.path.join(this_file_dir, "../assets/")
+
+        self.green_classifier = load(ASSETS_PATH + '134green.joblib')
+        self.pink_classifier = load(ASSETS_PATH + '134pink.joblib')
+
         first_image = rospy.wait_for_message(source_topic, Image)
         self.checkCalibrator.calibrate_all(first_image)
 
@@ -442,6 +450,12 @@ class Detector:
         rospy.loginfo("Image output topic: " + output_topic)
         rospy.loginfo("Tplink Rect output topic: " + cap_output_topic)
 
+    def treeThreshold(self, image, classifier):
+        shp = image.shape
+        pixels = image.reshape(-1, 3)
+        out = classifier.predict(pixels)
+        out = out.reshape(shp[0], shp[1], 1)
+        return out
 
     def test_calibration(self, ros_image):
         #calibration_image = self.checkCalibrator.calibrate_charucoboard(ros_image)
@@ -449,16 +463,13 @@ class Detector:
         self.calibration_publisher.publish(
             self.bridge.cv2_to_imgmsg(calibration_image, "bgr8"))
 
-    def detect(self, image, color, tols, min_size, max_size, show_mask=False):
-        lower = (color[0] - tols[0], color[1] - tols[1], color[2] - tols[2])
-        upper = (color[0] + tols[0], color[1] + tols[1], color[2] + tols[2])
-
-        mask = cv2.inRange(image, lower, upper)
+    def detect(self, image, classifier, min_size, max_size, show_mask=False):
+        mask = self.treeThreshold(image, classifier)[:,:,0]
         # use adaptive thresholding for saturation
         blur_v = cv2.GaussianBlur(image[:, :, 1],(3, 3),0)
         #blur_v = image[:, :, 1]
-        ret, th = cv2.threshold(blur_v, 255, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
-        mask = np.minimum(mask, th)
+        # ret, th = cv2.threshold(blur_v, 255, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+        # mask = np.minimum(mask, th)
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
         if show_mask:
             ms = mask.shape
@@ -591,44 +602,34 @@ class Detector:
                 self.band_publisher.publish(detection_msg)
         '''
 
-        on_picked_color = (155 / 2, 53 * 2.55, 48 * 2.55)
-        on_tols = (10, 40, 40)
-        on_mask, on_center, _ = self.detect(hsv_img, on_picked_color, on_tols, 100, 5000)
+        # TODO REVISIT ACTIVATION
+        # on_picked_color = (155 / 2, 53 * 2.55, 48 * 2.55)
+        # on_tols = (10, 40, 40)
+        # on_mask, on_center, _ = self.detect(hsv_img, on_picked_color, on_tols, 100, 5000)
 
-        active_msg = Activation()
-        if on_center is None:
-            print("robot is active!")
-            active_msg.active = True
-        else:
-            active_msg.active = False
-        self.activation_publisher.publish(active_msg)
+        # active_msg = Activation()
+        # if on_center is None:
+        #     print("robot is active!")
+        #     active_msg.active = True
+        # else:
+        #     active_msg.active = False
+        # self.activation_publisher.publish(active_msg)
 
-
-        #cap_picked_color = (200.0 / 2, 75 * 2.55, 55 * 2.55) # old values
-        # current green: cap_picked_color = (185.0 / 2, 55 * 2.55, 55 * 2.55)
-        # current green: cap_tols = (10, 60, 30)
-        # hot orange
-        cap_picked_color = (97, 160, 130)
-        cap_tols = (5, 255, 20)
         
         cap_mask, cap_center, _ = self.detect(
-            hsv_img, cap_picked_color, cap_tols, 90, 600,
-            show_mask=False)
+            hsv_img, self.green_classifier, 90, 600,
+            show_mask=True)
 
         # old blue
         # band_picked_color = (210 / 2, 85 * 2.55, 50 * 2.55)
         # band_tols = (10,40,40)
         # hot pink
-        band_picked_color = (165, 140, 130)
-        band_tols = (10, 255, 40)
         band_mask, band_center, band_moments = self.detect(
-            hsv_img, band_picked_color, band_tols, 200, 1500,
+            hsv_img, self.pink_classifier, 200, 1500,
             show_mask=False)
 
-        rim_picked_color = (165, 140, 130)
-        rim_tols = (10, 255, 40)
         rim_mask, rim_center, rim_moments = self.detect(
-            hsv_img, rim_picked_color, rim_tols, 10, 100,
+            hsv_img, self.pink_classifier, 10, 100,
             show_mask=False)
 
         """
