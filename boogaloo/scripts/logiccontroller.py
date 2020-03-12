@@ -30,22 +30,26 @@ curr_state = None
 CAP_DET = 'CAP_DET'
 RIM_DET = 'RIM_DET'
 BAND_DET = 'BAND_DET'
+TARGET_DET = 'TARGET_DET'
 # Most recent detections
 detections = {
     CAP_DET: None,
     RIM_DET: None,
-    BAND_DET: None
+    BAND_DET: None,
+    TARGET_DET: None
 }
 det_history = {
     CAP_DET: [],
     RIM_DET: [],
-    BAND_DET: []
+    BAND_DET: [],
+    TARGET_DET: []
 }
 # Whether or not we want new dets
 want_detections = {
     CAP_DET: False,
     RIM_DET: False,
-    BAND_DET: False
+    BAND_DET: False,
+    TARGET_DET: False
 }
 
 # Publishers
@@ -284,10 +288,33 @@ def throw_bottle():
     # Quick and dirty "did I grab the bottle?" check
     if curr_state.wrist_angle > 0.3:
         active_state = wait_bottle_dets
+        want_detections[TARGET_DET] = False
+        detections[TARGET_DET] = None
         return
 
+    want_detections[TARGET_DET] = True
+
+    if detections[TARGET_DET] is None:
+        return
+
+    pos = toNpVec(detections[TARGET_DET])[:2]
+    yaw_pos = np.array([0, -0.122])
+    yaw_to_pos = pos - yaw_pos
+    dist_from_yaw = np.linalg.norm(yaw_to_pos)
+
+    print(dist_from_yaw)
+    print(yaw_to_pos)
+    print(math.acos(0.122/dist_from_yaw))
+    print(math.atan2(yaw_to_pos[0], yaw_to_pos[1]))
+
+    yaw_ang = math.acos(0.122/dist_from_yaw) - math.atan2(yaw_to_pos[0], yaw_to_pos[1]) 
+
+    print(yaw_ang)
+
+    yaw_ang += 0.1
+
     throw_cmd = ThrowCommand()
-    throw_cmd.yaw_ang = random.uniform(-0.2, 0.4)
+    throw_cmd.yaw_ang = yaw_ang
     throw_cmd.elbow_ang = 1.57
     throw_cmd.wrist_ang = 1.7
     throw_cmd.elbow_vel = 4.0
@@ -296,6 +323,8 @@ def throw_bottle():
     throw_cmd.wrist_rest = 1.0
     publish_msg(throw_pub, throw_cmd)
     active_state = wait_bottle_dets
+    want_detections[TARGET_DET] = False
+    detections[TARGET_DET] = None
 
 # Main logic loop
 def main_loop(timer_event):
@@ -367,6 +396,7 @@ def main():
     ros.Subscriber("/bottle_cap_dets", Detection, detection_callback, CAP_DET)
     ros.Subscriber("/bottle_rim_det", Detection, detection_callback, RIM_DET)
     ros.Subscriber("/bottle_band_det", Detection, detection_callback, BAND_DET)
+    ros.Subscriber("/target_det", Detection, detection_callback, TARGET_DET)
 
     # Init publishers
     joint_pub = ros.Publisher('/joint_goal', JointCommand, queue_size=10)

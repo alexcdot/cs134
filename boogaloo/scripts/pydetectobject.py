@@ -397,12 +397,14 @@ class Detector:
         cap_output_topic = rospy.resolve_name("/bottle_cap_dets")
         band_output_topic = rospy.resolve_name("/bottle_band_det")
         rim_output_topic = rospy.resolve_name("/bottle_rim_det")
+        target_output_topic = rospy.resolve_name("/target_det")
 
         this_file_dir = os.path.dirname(os.path.abspath(__file__))
         ASSETS_PATH = os.path.join(this_file_dir, "../assets/")
 
         self.green_classifier = load(ASSETS_PATH + '134green.joblib')
         self.pink_classifier = load(ASSETS_PATH + '134pink.joblib')
+        self.orange_classifier = load(ASSETS_PATH + '134orange.joblib')
 
         first_image = rospy.wait_for_message(source_topic, Image)
         self.checkCalibrator.calibrate_all(first_image)
@@ -433,6 +435,8 @@ class Detector:
 
         # Publish to the rim output topic:
         self.rim_publisher = rospy.Publisher(rim_output_topic,Detection,queue_size=1)
+
+        self.target_publisher = rospy.Publisher(target_output_topic,Detection,queue_size=1)
 
         # Publish to the calibration topic.
         self.calibration_publisher = rospy.Publisher(calibration_topic,
@@ -632,6 +636,10 @@ class Detector:
             hsv_img, self.pink_classifier, 10, 100,
             show_mask=False)
 
+        target_mask, target_center, target_moments = self.detect(
+            hsv_img, self.orange_classifier, 200, 100000,
+            show_mask=False)
+
         """
         Other colors:
             hot pink: 165, 177 (160-180), 142 ( 120-150)
@@ -682,6 +690,18 @@ class Detector:
             detection_msg.position.z = zw
             print('rim x, y, z:', xw[0], yw[0], zw)
             self.rim_publisher.publish(detection_msg)
+        if target_center is not None:
+            cv2.circle(cv_img, target_center, 2, (0,0,255), -1)
+            uv = np.array((target_center))
+            xw, yw = self.checkCalibrator.undistort_rim(uv)
+            zw=0
+            detection_msg = Detection()
+            detection_msg.position = Vector3()
+            detection_msg.position.x = xw
+            detection_msg.position.y = yw
+            detection_msg.position.z = zw
+            print('target x, y, z:', xw[0], yw[0], zw)
+            self.target_publisher.publish(detection_msg)
 
         #if M is not None:
         #    center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
