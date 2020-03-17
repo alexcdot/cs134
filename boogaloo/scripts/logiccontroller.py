@@ -10,6 +10,7 @@ import math
 import random
 from threading import Lock
 from copy import deepcopy
+from scipy.spatial.transform import Rotation
 
 from boogaloo.msg import JointCommand, PoseCommand, ThrowCommand, RobotState, MassChange, Detection
 from geometry_msgs.msg import Vector3
@@ -84,6 +85,38 @@ def publish_msg(pub, msg):
     pub.publish(msg)
     last_msg_time = ros.Time.now()
 
+#
+#  Matrix Manipulation Utilities
+#
+def vec(x, y, z):
+    return np.array([x, y, z])
+def Rx(q):
+    return Rotation.from_rotvec(q * vec(1, 0, 0))
+def Ry(q):
+    return Rotation.from_rotvec(q * vec(0, 1, 0))
+def Rz(q):
+    return Rotation.from_rotvec(q * vec(0, 0, 1))
+
+def hoeTipToGripperTip(tip_cmd):
+    grip_cmd = deepcopy(tip_cmd)
+    
+    pos = toNpVec(grip_cmd.pos)[:2]
+
+    yaw_pos = np.array([0, -0.122])
+    yaw_to_pos = pos - yaw_pos
+    dist_from_yaw = np.linalg.norm(yaw_to_pos)
+    yaw_ang = math.acos((0.122)/dist_from_yaw) - math.atan2(yaw_to_pos[0], yaw_to_pos[1])
+    pitch = grip_cmd.wrist_angle - 1.57
+
+    delta = vec(-0.15, 0.03, 0)
+    delta = Ry(-pitch).apply(delta)
+    delta = Rz(yaw_ang).apply(delta)
+    print(delta)
+
+    grip_cmd.pos = toRosVec(toNpVec(grip_cmd.pos) + delta)
+    grip_cmd.wrist_roll = 1.57
+    return grip_cmd
+
 # Callback to update robot current state
 def robot_state_callback(data):
     global curr_state
@@ -148,6 +181,8 @@ def wait_bottle_dets():
         want_detections[RIM_DET] = False
         detections[BAND_DET] = None
         detections[RIM_DET] = None
+        if math.sqrt(detections[CAP_DET].x**2 + (detections[CAP_DET].y - 0.112)**2) > 0.9:
+            active_state = drag_bottle
     # Fount a band and rim, upright it
     elif detections[BAND_DET] is not None and detections[RIM_DET] is not None and np.linalg.norm(toNpVec(detections[BAND_DET]) - toNpVec(detections[RIM_DET])) < 0.15:
         active_state = upright_bottle
@@ -155,6 +190,97 @@ def wait_bottle_dets():
         want_detections[BAND_DET] = False
         want_detections[RIM_DET] = False
         detections[CAP_DET] = None
+        if math.sqrt(detections[BAND_DET].x**2 + (detections[BAND_DET].y - 0.112)**2) > 0.9:
+            active_state = drag_bottle
+            
+def drag_bottle():
+    global detections, tip_pub, g_tip_cmd, multi_step, active_state
+
+    if detections[CAP_DET] is not None:
+        target = detections[CAP_DET]
+    else:
+        target = detections[BAND_DET]
+
+    
+    if multi_step == 0:
+        g_tip_cmd = PoseCommand()
+        g_tip_cmd.pose_follow = True
+        g_tip_cmd.pos.x = -0.01
+        g_tip_cmd.pos.y = 0.66
+        g_tip_cmd.pos.z = 0.1
+        g_tip_cmd.wrist_roll = -1.57
+        multi_step += 1
+
+    elif multi_step == 1:
+        g_tip_cmd.pos.z = 0.04
+        multi_step += 1
+
+    elif multi_step == 2:
+        g_tip_cmd.gripper = 1
+        multi_step += 1
+
+    elif multi_step == 3:
+        g_tip_cmd.pos.z = 0.2
+        multi_step += 1
+
+    elif multi_step == 4:
+        g_tip_cmd.wrist_angle = 1.57
+        g_tip_cmd.wrist_roll = 1.57
+        g_tip_cmd.pos.z = 0.3
+        multi_step += 1
+
+    elif multi_step == 5:
+        g_tip_cmd.pos = target
+        g_tip_cmd = hoeTipToGripperTip(g_tip_cmd)
+        g_tip_cmd.pos.z = 0.5
+        multi_step += 1
+
+    elif multi_step == 6:
+        g_tip_cmd.pos.z = 0.1
+        multi_step += 1
+
+    elif multi_step == 7:
+        v = toNpVec(g_tip_cmd.pos)
+        g_tip_cmd.pos = toRosVec((0.55 / np.linalg.norm(v)) * v)
+        multi_step += 1
+
+    elif multi_step == 8:
+        g_tip_cmd.pos.z = 0.5
+        multi_step += 1
+
+    elif multi_step == 9:
+        g_tip_cmd.pos.x = -0.03
+        g_tip_cmd.pos.y = 0.66
+        g_tip_cmd.pos.z = 0.3
+        g_tip_cmd.wrist_roll = 3.14
+        multi_step += 1
+
+    elif multi_step == 10:
+        g_tip_cmd.pos.x = -0.01
+        g_tip_cmd.wrist_roll = 3.14 + 1.57
+        g_tip_cmd.wrist_angle = 0
+        g_tip_cmd.pos.z = 0.2
+        multi_step += 1
+
+    elif multi_step == 11:
+        g_tip_cmd.pos.z = 0.05
+        multi_step += 1
+
+    elif multi_step == 12:
+        g_tip_cmd.gripper = 0
+        multi_step += 1
+
+    elif multi_step == 13:
+        g_tip_cmd.pos.z = 0.3
+        multi_step = 0
+        active_state = wait_bottle_dets
+        detections[CAP_DET] = None
+        detections[BAND_DET] = None
+        detections[RIM_DET] = None
+
+    publish_msg(tip_pub, g_tip_cmd)
+
+
 
 # Pick up a bottle by the cap
 def grab_bottle_cap():
@@ -162,7 +288,7 @@ def grab_bottle_cap():
 
     detections[CAP_DET].z = 0.18
 
-    if math.sqrt(detections[CAP_DET].x**2 + detections[CAP_DET].y**2) < 0.75:
+    if math.sqrt(detections[CAP_DET].x**2 + (detections[CAP_DET].y - 0.112)**2) < 0.75:
         detections[CAP_DET].z -= 0.02
 
     print('Grabbing by cap: Stage', multi_step)
@@ -315,10 +441,10 @@ def throw_bottle():
 
     throw_cmd = ThrowCommand()
     throw_cmd.yaw_ang = yaw_ang
-    throw_cmd.elbow_ang = 1.57
+    throw_cmd.elbow_ang = 1.65
     throw_cmd.wrist_ang = 1.7
     throw_cmd.elbow_vel = 4.0
-    throw_cmd.wrist_vel = 6.5
+    throw_cmd.wrist_vel = 7.0
     throw_cmd.elbow_rest = 1.4
     throw_cmd.wrist_rest = 1.0
     publish_msg(throw_pub, throw_cmd)
